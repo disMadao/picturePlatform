@@ -2,12 +2,11 @@ package com.example.picturebackend.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.example.picturebackend.model.dto.picture.PictureQueryRequest;
-import com.example.picturebackend.model.dto.picture.PictureReviewRequest;
-import com.example.picturebackend.model.dto.picture.PictureUploadByBatchRequest;
-import com.example.picturebackend.model.dto.picture.PictureUploadRequest;
+import com.example.picturebackend.model.dto.picture.*;
+import com.example.picturebackend.model.dto.space.SpaceQueryRequest;
 import com.example.picturebackend.model.entity.Picture;
 import com.baomidou.mybatisplus.extension.service.IService;
+import com.example.picturebackend.model.entity.Space;
 import com.example.picturebackend.model.entity.User;
 import com.example.picturebackend.model.vo.PictureVO;
 import org.springframework.web.multipart.MultipartFile;
@@ -65,5 +64,38 @@ public interface PictureService extends IService<Picture> {
             PictureUploadByBatchRequest pictureUploadByBatchRequest,
             User loginUser
     );
+
+    /**
+     * 删除图片文件
+     *
+     * @param oldPicture
+     */
+    void clearPictureFile(Picture oldPicture);
+
+    /**
+     * 如果要删除的图片有空间 id，表示是用户上传到私有空间中的图片，那么登录用户必须是空间的管理员（也就是创建者），系统管理员也不能随意删除私有空间的图片。
+     * 删除图片和编辑图片的权限控制是一样的（有删除权限就有编辑权限），可以将这段权限校验逻辑封装为一个方法
+     *
+     * @param loginUser
+     * @param picture
+     */
+    void checkPictureAuth(User loginUser, Picture picture);
+
+    /**
+     * 删除图片
+     *
+     * @param pictureId
+     * @param loginUser
+     */
+    void deletePicture(long pictureId, User loginUser);
+
+    /**
+     * 修改图片
+     *
+     * @param pictureEditRequest
+     * @param loginUser
+     */
+    void editPicture(PictureEditRequest pictureEditRequest, User loginUser);
+
 
 }

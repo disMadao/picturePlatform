@@ -113,7 +113,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>
         if (currentUser == null || currentUser.getId() == null) {
             throw new BusinessException(ErrorCode.NOT_LOGIN_ERROR);
         }
-        // 从数据库查询（追求性能的话可以注释，直接返回上述结果），从数据库中取可以保证数据是最新的
+        // 从数据库查询，从数据库中取可以保证数据是最新的
         long userId = currentUser.getId();
         currentUser = this.getById(userId);
         if (currentUser == null) {
