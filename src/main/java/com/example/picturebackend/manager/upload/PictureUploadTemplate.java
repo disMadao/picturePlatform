@@ -66,14 +66,8 @@ public abstract class PictureUploadTemplate {
             List<CIObject> objectList = processResults.getObjectList();
             if (CollUtil.isNotEmpty(objectList)) {
                 CIObject compressedCiObject = objectList.get(0);
-                // 缩略图默认等于压缩图
-                CIObject thumbnailCiObject = compressedCiObject;
-                // 有生成缩略图，才得到缩略图
-                if (objectList.size() > 1) {
-                    thumbnailCiObject = objectList.get(1);
-                }
-                //封装压缩图返回
-                return buildResult(originFilename, compressedCiObject, thumbnailCiObject, imageInfo);
+                //封装压缩图返回，不设置缩略图URL
+                return buildResult(originFilename, compressedCiObject, imageInfo);
             }
             // 5. 封装返回结果
             return buildResult(originFilename, file, uploadPath, imageInfo);
@@ -87,13 +81,15 @@ public abstract class PictureUploadTemplate {
     }
 
     /**
-     * 封装返回结果，从压缩图中获取图片信息，将缩略图路径也设置到返回结果中
+     * 封装返回结果，从压缩图中获取图片信息
+     * 不设置缩略图URL（缩略图功能已禁用）
      *
      * @param originFilename
      * @param compressedCiObject
+     * @param imageInfo
      * @return
      */
-    private UploadPictureResult buildResult(String originFilename, CIObject compressedCiObject, CIObject thumbnailCiObject, ImageInfo imageInfo) {
+    private UploadPictureResult buildResult(String originFilename, CIObject compressedCiObject, ImageInfo imageInfo) {
         UploadPictureResult uploadPictureResult = new UploadPictureResult();
         int picWidth = compressedCiObject.getWidth();
         int picHeight = compressedCiObject.getHeight();
@@ -107,8 +103,7 @@ public abstract class PictureUploadTemplate {
         uploadPictureResult.setPicSize(compressedCiObject.getSize().longValue());
         // 设置图片为压缩后的地址
         uploadPictureResult.setUrl(cosClientConfig.getHost() + "/" + compressedCiObject.getKey());
-        // 设置缩略图
-        uploadPictureResult.setThumbnailUrl(cosClientConfig.getHost() + "/" + thumbnailCiObject.getKey());
+        // 不设置缩略图URL（缩略图功能已禁用）
         return uploadPictureResult;
     }
 

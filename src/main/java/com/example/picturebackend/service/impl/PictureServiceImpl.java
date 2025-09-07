@@ -155,7 +155,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
         // 补充设置 spaceId
         picture.setSpaceId(spaceId);
         picture.setUrl(uploadPictureResult.getUrl());
-        picture.setThumbnailUrl(uploadPictureResult.getThumbnailUrl());
+        // 不设置缩略图URL（缩略图功能已禁用）
         // 修改下图片名称
         String picName = uploadPictureResult.getPicName();
         if (pictureUploadRequest != null && StrUtil.isNotBlank(pictureUploadRequest.getPicName())) {
