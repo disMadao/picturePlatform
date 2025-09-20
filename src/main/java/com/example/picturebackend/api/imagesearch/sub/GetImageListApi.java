@@ -29,7 +29,11 @@ public class GetImageListApi {
     public static List<ImageSearchResult> getImageList(String url) {
         try {
             // 发起GET请求
-            HttpResponse response = HttpUtil.createGet(url).execute();
+//            String acsToken = "1758255646077_1758343986791_NrS+C8+qN6pSF4ybbx/Za7/R5w12kMHCH1Gx7PtJUQKo0C3gGpcoXW4Z8nSDGkAdA5HZJ4eFT4WJad8qPY/zj3HEf/OMR3I+N1P42Xy7xA0CU8dDHj679hrlLl2fgcMx9GzI3ffBGaLiT/CS0f7tQ8RqQcfjuuPHtzB7ttZhe20EhVUMHmNvUlnkfnXT6G7dOeSh3Zs0Ngc12tSUpbp8h4ZfcQKSCEjyKZUYJnMjJrCdxrBu9pIaIa2ku5Vc8D7qqnTGblxqJxPxaJ4FrUi7yCPCEpEweuYhZ0sW6IR1IpWPlED/P1Nn1QxkN5NFksYK+WrIYJeBiggkOSuN/WdvT8Ada62x/LMKok3geh+HR8HeiD2Ph7oeA9jK3CqatkkZM3X5rbcLK54ozTrgfpZMzx00q3WzE1XD/0E4qsk5XNE879Ae8bnMtisD9q5NI0BESszgnqJQZkjASOj/luFlvg==";
+
+            HttpResponse response = HttpUtil.createGet(url)
+//                    .header("Acs-Token",acsToken)
+                    .execute();
 
             // 获取响应内容
             int statusCode = response.getStatus();

@@ -31,7 +31,7 @@ public class ImageSearchApiFacade {
 
     public static void main(String[] args) {
         // 测试以图搜图功能
-        String imageUrl = "https://www.codefather.cn/logo.png";
+        String imageUrl = "https://p11-ark-imagex.byteimg.com/tos-cn-i-51fv3nh8ci/4ef4ed86dd3144a7ab34d0859dbfd3d3~tplv-51fv3nh8ci-avif-cp:q90.avif";
         List<ImageSearchResult> resultList = searchImage(imageUrl);
         System.out.println("结果列表" + resultList);
     }
