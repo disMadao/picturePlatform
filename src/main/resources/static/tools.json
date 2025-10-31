@@ -1,0 +1,34 @@
+[
+  {
+    "name": "searchPerson",
+    "description": "搜索三国时期的人物资料",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "要搜索的人物名称",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "searchPictures",
+    "description": "按名称、讲解等查询图片",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "searchText": {
+          "description": "要搜索的图片信息",
+          "type": "string"
+        }
+      },
+      "required": [
+        "searchText"
+      ]
+    }
+  }
+]

@@ -11,6 +11,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.picturebackend.api.aliyunai.AliYunAiApi;
 import com.example.picturebackend.api.aliyunai.model.CreateOutPaintingTaskRequest;
 import com.example.picturebackend.api.aliyunai.model.CreateOutPaintingTaskResponse;
+import com.example.picturebackend.api.bytedance_ark_pic_understand.ChatCompletionsExample;
 import com.example.picturebackend.exception.BusinessException;
 import com.example.picturebackend.exception.ErrorCode;
 import com.example.picturebackend.exception.ThrowUtils;
@@ -53,14 +54,26 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
-* @author 枚子君
-* @description 针对表【picture(图片)】的数据库操作Service实现
-* @createDate 2025-04-20 11:38:39
-*/
+ * @author 枚子君
+ * @description 针对表【picture(图片)】的数据库操作Service实现
+ * @createDate 2025-04-20 11:38:39
+ */
 @Slf4j
 @Service
 public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
-    implements PictureService{
+        implements PictureService {
+
+    @Override
+    public List<Map<String, Object>> getAllPicturesIdUrlIntroduction() {
+        // 创建查询包装器
+        QueryWrapper<Picture> queryWrapper = new QueryWrapper<>();
+        // 只查询需要的字段
+        queryWrapper.select("id", "url", "introduction");
+        // 排除已删除的图片
+        queryWrapper.eq("isDelete", 0);
+        // 执行查询
+        return this.listMaps(queryWrapper);
+    }
 
     @Resource
     private FileManager fileManager;
@@ -85,6 +98,14 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
     @Resource
     private AliYunAiApi aliYunAiApi;
 
+    /**
+     * 这个方法里面添加了使用豆包的视图理解llm生成标签和简介的内容，这个方法千万不能乱调用！！要钱的！！！
+     *
+     * @param inputSource
+     * @param pictureUploadRequest
+     * @param loginUser
+     * @return
+     */
     @Override
     public PictureVO uploadPicture(Object inputSource, PictureUploadRequest pictureUploadRequest, User loginUser) {
         if (inputSource == null) {
@@ -176,6 +197,20 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
             // 如果是更新，需要补充 id 和编辑时间
             picture.setId(pictureId);
             picture.setEditTime(new Date());
+
+        } else if (picture.getIntroduction() == null || picture.getIntroduction().equals("")) {
+            try {
+                ChatCompletionsExample chatCompletionsExample = new ChatCompletionsExample();
+                System.out.println("打印一下模型输出的东西");
+                String[] results = chatCompletionsExample.getPictureIntroductionAndTags(picture.getUrl()).split(";");
+                for (String tmp : results) {
+                    System.out.println(tmp);
+                }
+                picture.setIntroduction(results[0]);
+                picture.setTags(results[1]);
+            } catch (Exception e) {
+                System.out.println("！！！！！！！大模型输出异常了，不影响程序的正常运行！！！！！！！！！！！！！！");
+            }
         }
         // 开启事务
         Long finalSpaceId = spaceId;
@@ -194,6 +229,7 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
             }
             return picture;
         });
+
 //        boolean result = this.saveOrUpdate(picture);
 //        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "图片上传失败");
 

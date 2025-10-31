@@ -88,6 +88,28 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--        java的openai包-->
+        <dependency>
+            <groupId>com.openai</groupId>
+            <artifactId>openai-java</artifactId>
+            <version>3.6.0</version>
+        </dependency>
+        <!--        字节的ark视图理解模型-->
+        <dependency>
+            <groupId>com.volcengine</groupId>
+            <artifactId>volcengine-java-sdk-ark-runtime</artifactId>
+            <version>0.2.35</version>
+        </dependency>
+        <!--        本来ChatCompletionExampl可以运行的，重启之后突然就运行不了了，莫名其妙，报了个少包的错误，导入下面这个包看看-->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+            <version>3.14.9</version> <!-- 这是最后一个纯 Java 版本 -->
+        </dependency>
+        <dependency>
+            <artifactId>lombok</artifactId>
+            <groupId>org.projectlombok</groupId>
+        </dependency>
     </dependencies>
     <dependencyManagement>
         <dependencies>

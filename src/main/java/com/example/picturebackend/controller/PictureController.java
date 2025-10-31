@@ -44,6 +44,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -83,7 +84,6 @@ public class PictureController {
         User loginUser = userService.getLoginUser(request);
         PictureVO pictureVO = pictureService.uploadPicture(multipartFile, pictureUploadRequest, loginUser);
 
-
         return ResultUtils.success(pictureVO);
     }
 
@@ -98,6 +98,16 @@ public class PictureController {
         User loginUser = userService.getLoginUser(request);
         pictureService.deletePicture(deleteRequest.getId(), loginUser);
         return ResultUtils.success(true);
+    }
+
+    /**
+     * 查询所有图片的id、url和简介
+     * 返回成方便Python解析的格式
+     */
+    @GetMapping("/all/simple")
+    public BaseResponse<List<Map<String, Object>>> getAllPicturesSimple() {
+        List<Map<String, Object>> pictures = pictureService.getAllPicturesIdUrlIntroduction();
+        return ResultUtils.success(pictures);
     }
 
     /**
@@ -215,6 +225,7 @@ public class PictureController {
         return ResultUtils.success(pictureService.getPictureVOPage(picturePage, request));
     }
 
+
     /**
      * 编辑图片（给用户使用）
      */
@@ -251,11 +262,13 @@ public class PictureController {
         return ResultUtils.success(true);
     }
 
+    // 改成了直接用豆包的视图识别llm生成标签和简介，这个接口不知道还有用没。
     @GetMapping("/tag_category")
     public BaseResponse<PictureTagCategory> listPictureTagCategory() {
         PictureTagCategory pictureTagCategory = new PictureTagCategory();
-        List<String> tagList = Arrays.asList("热门", "搞笑", "生活", "高清", "艺术", "校园", "背景", "简历", "创意");
-        List<String> categoryList = Arrays.asList("模板", "电商", "表情包", "素材", "海报");
+//        List<String> tagList = Arrays.asList("热门", "搞笑", "生活", "高清", "艺术", "校园", "背景", "简历", "创意");
+        List<String> tagList = Arrays.asList();
+        List<String> categoryList = Arrays.asList("动漫", "二次元", "表情包", "素材", "海报");
         pictureTagCategory.setTagList(tagList);
         pictureTagCategory.setCategoryList(categoryList);
         return ResultUtils.success(pictureTagCategory);

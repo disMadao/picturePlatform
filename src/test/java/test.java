@@ -33,6 +33,8 @@ public class test {
     }
 
     public static void main(String[] args) {
+        Integer a = 1;
+        System.out.println(a);
         System.out.println(getEncryptPassword("123123123"));
     }
 }

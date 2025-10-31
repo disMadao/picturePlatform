@@ -14,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.Map;
 
 /**
 * @author 枚子君
@@ -98,6 +99,13 @@ public interface PictureService extends IService<Picture> {
      * @param loginUser
      */
     void editPicture(PictureEditRequest pictureEditRequest, User loginUser);
+
+    /**
+     * 查询所有图片的id、url和简介
+     *
+     * @return 包含图片id、url和简介的列表
+     */
+    List<Map<String, Object>> getAllPicturesIdUrlIntroduction();
 
     /**
      * 按颜色搜索图片（在同一空间下以图搜图，不调api）
