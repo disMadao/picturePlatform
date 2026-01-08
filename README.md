@@ -1,200 +1,130 @@
-# 智能协同云图库项目介绍
+## 忆存云图（Yu Picture Platform）
 
-> 作者：[程序员鱼皮](https://yuyuanweb.feishu.cn/wiki/Abldw5WkjidySxkKxU2cQdAtnah)
->
-> 本项目为教学项目，提供完整视频教程 + 文字教程 + 简历写法 + 面试题解 + 答疑服务，帮你提升项目能力，给简历增加亮点！
->
-> ⭐️ 加入项目系列学习：[加入编程导航](https://www.codefather.cn/vip)
+**忆存云图**是一个面向企业/个人的智能图片存储与管理平台后端项目，聚焦“海量存储 + 快速检索 + 协同编辑 + Agent 智能搜索”。本仓库包含两套后端：
 
-## 一分钟了解项目
+- **`picture-backend/`（Java）**：业务后端，负责图片上传/处理、权限与空间体系、检索与协同编辑等核心能力。
+- **`agent-backend/`（Python）**：Agent 服务，把搜索能力包装为可编排的工具调用链，并接入 Milvus 向量库，提供更智能的检索入口。
 
-请观看项目介绍和上线教程视频：https://www.bilibili.com/video/BV1akwGeSERK
+> 本 README **不介绍前端**，也**不介绍 `picture-backend-ddd`**；只围绕 `picture-backend` 与 `agent-backend` 的结构与技术要点。
 
-## 项目介绍
+---
 
-基于 Vue 3 + Spring Boot + COS + WebSocket 的 **企业级智能协同云图库平台**。
+## 项目亮点（和源码对应）
 
-这个平台的应用场景非常广泛，核心功能可分为 4 大类，将分为 3 个阶段循序渐进带大家完成~
+### 1）腾讯 COS 海量存储 + 数据万象（CI）图片处理
 
-1）所有用户都可以在平台公开上传和检索图片素材，快速找到需要的图片。可用作表情包网站、设计素材网站、壁纸网站等：
+- **对象存储接入**：`picture-backend/src/main/java/.../config/CosClientConfig.java` 通过 `cos.client.*` 配置创建 `COSClient`。
+- **上传即处理**：`.../manager/CosManager.java` 在上传时使用 `PicOperations`：
+  - 将原图转为 **webp 压缩**（`imageMogr2/format/webp`）
+  - 按条件生成 **缩略图**（`imageMogr2/thumbnail/<w>x<h>>`）
+- **上传模板化**：`.../manager/upload/PictureUploadTemplate.java` 抽象“校验 -> 落地临时文件 -> 上传 -> 解析 CI 返回信息 -> 清理临时文件”的通用流程，便于扩展文件/URL 等多种来源。
 
-![](https://pic.yupi.icu/1/1733224630053-4e43c368-028b-4758-b9e5-a451e919b976-20241204133447098-20241204144141724-20241204144303485.png)
+### 2）Redis + Caffeine 两级缓存（提升读性能与体验）
 
-2）管理员可以上传、审核和管理图片，并对系统内的图片进行分析：
+在图片列表查询中落地了**本地缓存（Caffeine）+ 分布式缓存（Redis）**的两级缓存策略，并加入随机过期时间以降低缓存雪崩风险：
 
-![](https://pic.yupi.icu/1/1733224690345-7d4220c6-ea5c-4c7b-a1a9-9ea900837322-20241204133447144-20241204144141760-20241204144303557.png)
+- `picture-backend/src/main/java/.../controller/PictureController.java`
+  - `LOCAL_CACHE`：Caffeine 本地缓存，`expireAfterWrite(5 min)`
+  - Redis 缓存：`StringRedisTemplate`，写入时 `300~600s` 随机过期
 
-3）对于个人用户，可将图片上传至私有空间进行批量管理、检索、编辑和分析，用作个人网盘、个人相册、作品集等：
+> 目前该接口标注为 `@Deprecated`（保留实现用于对比与面试说明）；主业务接口仍可按需继续演进统一缓存层。
 
-![](https://pic.yupi.icu/1/1732794489757-a209de7f-8b92-4f7c-89fc-c7ce942c0769-20241204133447220-20241204144141829-20241204144303735.png)
+### 3）ShardingSphere 分库分表：按 `spaceId` 动态路由图片表
 
-4）对于企业，可开通团队空间并邀请成员，共享图片并 **实时协同编辑图片**，提高团队协作效率。可用于提供商业服务，如企业活动相册、企业内部素材库等：
+- **分片规则**：`application.yml` 中的 `spring.shardingsphere.rules.sharding.tables.picture` 使用自定义分片算法（`CLASS_BASED`）。
+- **自定义分片算法**：`.../manager/sharding/PictureShardingAlgorithm.java`
+  - 以 `spaceId` 作为分片键，路由到 `picture_{spaceId}`（如果存在）
+  - `spaceId` 为空时回退逻辑表 `picture`
+- **可选的动态分表管理器（实验/预留）**：`.../manager/sharding/DynamicShardingManager.java`
+  - 包含“创建分表 + 动态更新 `actual-data-nodes`”的思路（当前类上 `@Component` 注释掉，属于可选方案/预留能力）。
 
-![](https://pic.yupi.icu/1/1732794085872-58b35d55-7325-4815-a16a-73f667f581ef-20241204133447259-20241204144141872-20241204144304075.png)
+### 4）WebSocket 实时协同编辑：分布式锁 + 跨实例广播 + Disruptor 异步化
 
-该项目功能丰富，涉及文件存管、内容检索、权限控制、实时协同等企业主流业务场景，并运用多种编程思想、架构设计方法和优化策略来保证项目的高速迭代和稳定运行。
+协同编辑链路按“连接 -> 消息 -> 异步处理 -> 广播”分层，重点解决**多实例一致性**与**高并发消息吞吐**：
 
-有业务、有技术，从 0 到 1 的真实企业级（商业级）项目设计开发，绝对让你收获满满！
+- **WebSocket 接入**：`.../manager/websocket/WebSocketConfig.java` 注册 `/ws/picture/edit`
+- **分布式处理器**：`.../manager/websocket/DistributedPictureEditHandler.java`
+  - **编辑锁**：`PictureEditDistributedLockService` 使用 Redis `SETNX + TTL`，并在 Redis 不可用时降级为本机内存锁
+  - **跨实例广播**：`PictureEditBroadcastPublisher` 抽象广播能力
+    - 默认 **Redis Pub/Sub**：`PictureEditRedisPublisher`（失败时降级为本机广播）
+    - 可选 **RabbitMQ fanout**：`.../distributed/mq/*`，每个实例声明独立队列，消费者收到后下发到本机 session
+  - **Disruptor**：`.../manager/websocket/disruptor/PictureEditEventDisruptorConfig.java` 使用环形队列把 WS 消息处理异步化，提升高并发下的协同流畅度
 
+### 5）Python Agent 模块：工具化封装 + Milvus 向量库（以文搜图）+ 与 Java 后端联动
 
+Agent 服务提供统一搜索入口，并按 ReAct 思路把“决策/调用/观测”过程结构化返回，便于调试与展示：
 
-### 项目三大阶段
+- **对外 API**：`agent-backend/main.py` 暴露 `/agent/search`
+- **Agent 路由与工具调用**：`agent-backend/agent_backend/agent.py`
+  - `mode=auto` 时：启发式规则 +（可选）DeepSeek 决策，路由到
+    - Java 后端关键词检索（`backend`）
+    - Milvus 文本向量检索（`vector_text`）
+    - Milvus 以图搜图（`vector_image`，当前为占位实现）
+- **向量库客户端**：`agent-backend/agent_backend/vector_store.py`
+  - 使用 `pymilvus` 连接 Milvus；文本向量检索默认支持 `sentence-transformers`（未安装则返回空结果，保证服务可启动）
+- **MySQL -> Milvus 同步脚本**：`agent-backend/scripts/sync_milvus_from_mysql.py`
+  - 从 `picture` 表抽取 `name/category/introduction/tags` 拼接文本做 embedding
+  - 写入 Milvus `picture_vectors` 集合（`picture_id + embedding`）
+- **与 Java 后端联动（补齐 PictureVO）**：`agent-backend/agent_backend/java_client.py`
+  - 向量库返回 `picture_id` 后，通过 Java `/picture/get/vo` 补齐图片详情
+  - 通过 `X-Internal-Token`（环境变量 `AGENT_INTERNAL_TOKEN`）进行**内部服务鉴权**，避免在 Agent 侧保存管理员账号密码
+- **鉴权落点（Java）**：`picture-backend/src/main/java/.../config/AgentInternalAuthFilter.java`
+  - 校验 `X-Internal-Token`，并限制仅本机来源
+  - 在服务端注入管理员登录态（`HttpSession` + `Sa-Token SPACE`），以兼容空间权限校验
 
-为了帮大家循序渐进地学习，鱼皮将项目设计为三个阶段，可以根据自己的时间和水平按需学习。
+更详细的联动与鉴权说明见：`docs/01-auth-and-agent-integration.md`
 
-1）第一阶段，开发公共的图库平台。实战 Vue 3 + Spring Boot 图片素材网站的快速开发，学习文件存管业务的开发和优化技巧。
+---
 
-> 成果：可用作表情包网站、设计素材网站、壁纸网站等
+## 目录结构（后端）
 
-![](https://pic.yupi.icu/1/1733224742171-84cf7ec3-5851-468e-87f4-5d2a6759ff54-20241204144304209.png)
+### `picture-backend/`（Spring Boot）
 
-2）第二阶段，对项目 C 端功能进行大量扩展。用户可开通私有空间，并对空间图片进行多维检索、扫码分享、批量管理、快速编辑、用量分析。该阶段涉及大量主流业务功能开发，能学到很多业务知识和开发经验。
+- **`controller/`**：REST 接口（图片/空间/用户等）
+- **`manager/`**：核心能力封装
+  - **`CosManager`**：COS 上传/下载/删除 + CI 图片处理
+  - **`upload/`**：上传模板方法（支持不同输入源）
+  - **`sharding/`**：分库分表与分片算法
+  - **`websocket/`**：协同编辑（分布式锁/广播/Disruptor）
+- **`service/`**：业务服务层（配合 MyBatis-Plus）
+- **`config/`**：COS、内部鉴权 Filter 等基础配置
 
-> 成果：可用作个人网盘、个人相册、作品集等
+### `agent-backend/`（FastAPI）
 
-![](https://pic.yupi.icu/1/1733224807605-f8f0685e-8990-437a-b40c-8ab2916efced-20241204144304325.png)
+- **`main.py`**：HTTP 入口
+- **`agent_backend/agent.py`**：Agent 决策与工具调用（ReAct 轨迹）
+- **`agent_backend/java_client.py`**：调用 Java 后端（内部 token 鉴权）
+- **`agent_backend/vector_store.py`**：Milvus 向量检索客户端
+- **`scripts/sync_milvus_from_mysql.py`**：MySQL 同步到 Milvus 的离线脚本
+- **`docker-compose.yml`**：Milvus（含 etcd/minio）一键启动
 
-3）第三阶段，对项目 B 端功能进行大量扩展。企业可开通团队空间，邀请和管理空间成员，团队内共享图片并实时协同编辑图片。该阶段涉及大量商业项目的应用场景，能学到很多架构设计和项目优化的技巧。
+---
 
-> 成果：可用于提供商业服务，如企业活动相册、企业内部素材库等
+## 快速启动（仅后端/本地联调）
 
-![](https://pic.yupi.icu/1/1732795051719-55c2a296-73fd-439b-b0b7-1e8dd16e0e47-20241204144304468.png)
+### 1）启动 `picture-backend`
 
-项目架构设计图：
+按 `picture-backend/src/main/resources/application.yml` 配置 MySQL、Redis 等依赖后启动 Spring Boot 即可。
 
-![](https://pic.yupi.icu/1/1732691889100-e562c709-cffa-477d-9329-1dc5ac1d35c8-20241204144304741-20241204145344935-20241204145354234.png)
+### 2）启动 Milvus（用于向量检索）
 
+在 `agent-backend/` 目录下：
 
+```bash
+docker compose up -d
+```
 
-### 项目特点
+### 3）启动 `agent-backend`
 
-鱼皮原创项目系列以实战为主，**从 0 到 1** 带大家学习技术知识，并立即实践运用到项目中，做到学以致用。
+```bash
+pip install -r agent-backend/requirements.txt
+python agent-backend/main.py
+```
 
-从需求分析、技术选型、项目设计、项目初始化、Demo 编写、前后端开发实现、项目优化、部署上线等，每个环节我都 **从理论到实践** 给大家讲的明明白白、每个细节都不放过！
+> 向量“以文搜图”需要额外安装 `sentence-transformers`（脚本与向量客户端里有提示）；未安装时服务仍可运行，只是向量检索会返回空结果。
 
-满满的项目正反馈：
+---
 
-![](https://pic.yupi.icu/1/202409291634731-20241204144539181.png)
+## 相关文档
 
-除视频教程外，鱼皮编程导航的项目还提供：
-
-- 详细的直播笔记（本项目有全套文字教程）
-- 完整的项目源码（分节的代码，更易学习）
-- 答疑解惑和专属项目交流群
-- ⭐️ 现成的简历写法（直接写满简历）
-- ⭐️ 项目的扩展思路（拉开和其他人的差距）
-- ⭐️ 项目相关面试题、题解和真实面经（提前准备，面试不懵逼）
-- ⭐️ 前端 + Java 后端万用项目模板（快速创建项目）
-
-![](https://pic.yupi.icu/1285/202409291634728.png)
-
-![](https://pic.yupi.icu/1285/202409291635501.png)
-
-
-
-## 加入学习
-
-编程导航已有 **10 多套项目教程**，每个项目的学习重点不同，几乎全都是前端 + 后端的 **全栈** 项目！
-
-欢迎 [加入编程导航](https://www.codefather.cn/vip)，不仅能学习往期 [10+ 套原创项目教程](https://mp.weixin.qq.com/s/omIazLMQlTo9M3jFFH7NzQ?token=70787607&lang=zh_CN) ，还能享受更多原创资料、学习指南、求职指导、上百场模拟面试视频，开启你的编程起飞之旅~
-
-
-## 项目收获
-
-本项目选题新颖、功能丰富、业务真实、应用广泛。区别于增删改查的 “烂大街” 项目，鱼皮会带你实战大量新技术和商业应用场景，掌握层层递进的系统设计、项目扩展和优化方案，给你的简历大幅增加竞争力。
-
-鱼皮给大家讲的都是 **通用的项目开发方法和架构设计套路**，从这个项目中你可以学到：
-
-- 如何拆解复杂业务，从 0 开始设计实现企业级系统？
-- 如何巧用 RBAC 权限模型和框架实现复杂权限控制？
-- 如何结合 Redis + Caffeine 构建高性能多级缓存？
-- 如何实现文件的高效存储，并通过十几种策略进行优化？
-- 如何使用高级数据结构 Disruptor 无锁队列提升并发性能？
-- 如何使用 ShardingSphere 实现动态扩容的分库分表？
-- 如何使用 WebSocket 多端通信，实现企业级实时协作功能？
-- 如何接入 AI 绘图大模型，实现更多高级图片处理能力？
-- 如何使用 DDD 架构实现大型企业级项目？
-- 如何快速部署上线项目？
-
-此外，还能学会很多作图、思考问题、对比方案的方法，提升排查问题、自主解决 Bug 的能力。鱼皮还给大家提供了大量的项目扩展点，有能力的同学可以进一步拉开和别人的区分度，无限进步！
-
-
-
-## 技术选型
-
-### 后端
-
-- Java Spring Boot 框架
-- MySQL 数据库 + MyBatis-Plus 框架 + MyBatis X 
-- Redis 分布式缓存 + Caffeine 本地缓存
-- Jsoup 数据抓取
-- ⭐️ COS 对象存储
-- ⭐️ ShardingSphere 分库分表
-- ⭐️ Sa-Token 权限控制
-- ⭐️ DDD 领域驱动设计
-- ⭐️ WebSocket 双向通信
-- ⭐️ Disruptor 高性能无锁队列
-- ⭐️ JUC 并发和异步编程
-- ⭐️ AI 绘图大模型接入
-- ⭐️ 多种设计模式的运用
-- ⭐️ 多角度项目优化：性能、成本、安全性等
-
-
-
-### 前端
-
-- Vue 3 框架
-- Vite 打包工具
-- Ant Design Vue 组件库
-- Axios 请求库
-- Pinia 全局状态管理
-- 其他组件：数据可视化、图片编辑等
-- ⭐️ 前端工程化：ESLint + Prettier + TypeScript
-- ⭐️ OpenAPI 前端代码生成
-
-
-
-## 项目资料
-
-包括：
-
-- 学习计划、视频教程、文字教程、项目源码
-- 项目答疑、项目交流群、学员笔记
-- 简历写法、面试题解、扩展思路
-
-以上资料均可在编程导航网站获取，点击 [加入编程导航](https://www.codefather.cn/vip)，可以解锁全部项目资料。
-
-
-
-## 真实评价
-
-编程导航帮助大量小伙伴学会做项目，拿到理想的 Offer！
-
-![](https://pic.yupi.icu/1285/202409291638711.png)
-
-![](https://pic.yupi.icu/1285/202409291638114.png)
-
-![](https://pic.yupi.icu/1285/202409291638987.png)
-
-
-
-## 更多编程导航项目
-
-请观看该视频，可以利用视频底部的章节条快速定位到对应的项目哦：https://www.bilibili.com/video/BV1YvmbYbEgS （记得给个三连支持谢谢 ❤️）
-
-
-## 加入编程导航学习本项目
-
-本项目为教学项目，提供完整视频教程 + 文字教程 + 简历写法 + 面试题解 + 答疑服务，帮你提升项目能力，给简历增加亮点！
-
-点击 [加入编程导航](https://www.codefather.cn/vip)，鱼皮带做的所有 10+ 项目教程都可以无限回看！
-
-👨🏻‍💻 数万人的编程学习交流圈，帮你更快学好编程 => 做出项目 => 搞定毕设 => 拿到 offer
-
-1. 获取原创编程学习路线、几十位大厂嘉宾的独家经验分享和答疑
-2. 获取原创编程 **学习指南和求职指南**，帮你解决学习问题、告别迷茫
-3. 数十套保姆级 **原创项目实战教程**，简历写法、面试题解、项目答疑一条龙，掌握独立做项目的方法
-4. 获取独家写简历技巧，查看几百份 **真实简历参考**，提高简历通过率
-5. 获取保姆级求职指南、每日投递信息表、精选面试题、面经汇总
-6. 加入专属编程交流群，获取每日优质文章推送，提高学习动力
-7. 鱼皮往期所有直播无限回看
+- `docs/01-auth-and-agent-integration.md`：Java 后端与 Python Agent 的鉴权联动（面试版说明）
