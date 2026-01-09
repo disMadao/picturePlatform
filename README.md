@@ -127,4 +127,4 @@ python agent-backend/main.py
 
 ## 相关文档
 
-- `docs/01-auth-and-agent-integration.md`：Java 后端与 Python Agent 的鉴权联动（面试版说明）
+- `docs/01-auth-and-agent-integration.md`：Java 后端与 Python Agent 的鉴权联动
