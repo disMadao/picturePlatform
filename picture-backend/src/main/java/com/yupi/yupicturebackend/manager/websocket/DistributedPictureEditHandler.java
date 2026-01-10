@@ -40,7 +40,7 @@ public class DistributedPictureEditHandler extends TextWebSocketHandler {
 
     @Resource
     @Lazy
-    private PictureEditEventProducer pictureEditEventProducer;
+    private PictureEditEventProducer pictureEditEventProducer;//仅用于广播事件到 disruptor中，交给里面的线程异步处理事件
 
     @Resource
     private PictureEditSessionRegistry sessionRegistry;
@@ -49,7 +49,7 @@ public class DistributedPictureEditHandler extends TextWebSocketHandler {
     private PictureEditDistributedLockService lockService;
 
     @Resource
-    private PictureEditBroadcastPublisher broadcastPublisher;
+    private PictureEditBroadcastPublisher broadcastPublisher;//用于广播所有通知类别消息
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -66,6 +66,12 @@ public class DistributedPictureEditHandler extends TextWebSocketHandler {
         broadcastPublisher.publish(pictureId, resp, null);
     }
 
+    /**
+     * 优化之前是这里直接根据事件类型调用对应的 hande 方法处理，现在只需要将事件放到 disruptor队列中，处理交给 disruptor中的线程
+     * @param session
+     * @param message
+     * @throws Exception
+     */
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
         super.handleTextMessage(session, message);

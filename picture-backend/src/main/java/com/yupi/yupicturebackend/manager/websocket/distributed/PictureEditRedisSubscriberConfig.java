@@ -39,6 +39,11 @@ public class PictureEditRedisSubscriberConfig {
         return new MessageListener() {
             private final StringRedisSerializer serializer = new StringRedisSerializer();
 
+            /**
+             * 收到redis的消息之后，调用单机实例的sessionRegistry通知本机的session
+             * @param message
+             * @param pattern
+             */
             @Override
             public void onMessage(Message message, byte[] pattern) {
                 try {

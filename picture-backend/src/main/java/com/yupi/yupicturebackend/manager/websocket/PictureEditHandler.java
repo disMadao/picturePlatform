@@ -71,8 +71,14 @@ public class PictureEditHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 收到前端发送的消息，根据消息类别处理消息
+     * 收到前端发送的消息，根据消息类别处理消息，这里优化点是采用pictureEditEventProducer这种Disruptor，原本的处理方法是直接在这里从Session中提取消息然后根据类别调用对应的 handle 方法处理。
      *
+     * WebSocket通常是长连接，每个客户端都要占用服务器资源，如果同一个WebSocket连续发送多条消息，服务器端也会顺序同步处理，而不是并发，这是为了确保安全。
+     *
+     * 但如果一个用户大量操作耗时比较长怎么解决呢？
+     * -> 最简单的是开一个线程专门一部处理消息，但我们还要保证草在是按照顺序同步给其他客户端的，所以要引入一个队列，将任务按照顺序放到队列中，交给线程去处理，
+     *    概括下就是：异步操作+从任务队列中取任务执行，使用线程池也可以实现。
+     *    但为了尽可能降低延迟，采用Disruptor无锁队列来减少线程切换，Disruptor 还有个有点，将任务放在队列中，通过优雅停机机制，能在服务挺值钱执行完所有任务再退出服务，防止消息丢失。
      * @param session
      * @param message
      * @throws Exception
