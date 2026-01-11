@@ -35,14 +35,20 @@ public class PictureEditEventProducer {
      */
     public void publishEvent(PictureEditRequestMessage pictureEditRequestMessage, WebSocketSession session, User user, Long pictureId) {
         RingBuffer<PictureEditEvent> ringBuffer = pictureEditEventDisruptor.getRingBuffer();
-        // 获取到可以防止事件的位置
-        long next = ringBuffer.next();
+        // 1. 获取环形缓冲区中的下一个位置
+        long next = ringBuffer.next();  // 拿到一个空的slot索引
+
+        // 2. 通过索引获取缓冲区中已存在的空事件对象
         PictureEditEvent pictureEditEvent = ringBuffer.get(next);
+        // 注意：这里不是new一个新对象，而是拿到缓冲区预先分配的对象
+
+        // 3. 填充这个事件对象的数据
         pictureEditEvent.setPictureEditRequestMessage(pictureEditRequestMessage);
         pictureEditEvent.setSession(session);
         pictureEditEvent.setUser(user);
         pictureEditEvent.setPictureId(pictureId);
-        // 发布事件，然后disruptor后台线程会自动处理，也就是PictureEditEventDisruptorCOnfig中的 disruptor.start();启动的
+
+        // 4.发布事件（告诉消费者这个位置的数据已准备好），然后disruptor后台线程会自动处理，也就是PictureEditEventDisruptorConfig中的 disruptor.start();启动的
         ringBuffer.publish(next);
     }
 

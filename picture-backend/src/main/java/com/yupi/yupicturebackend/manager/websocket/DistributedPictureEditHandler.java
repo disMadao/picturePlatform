@@ -67,7 +67,7 @@ public class DistributedPictureEditHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 优化之前是这里直接根据事件类型调用对应的 hande 方法处理，现在只需要将事件放到 disruptor队列中，处理交给 disruptor中的线程
+     * 优化之前是这里直接根据事件类型调用对应的 handle 方法处理，现在只需要将事件放到 disruptor队列中，处理交给 disruptor中的线程
      * @param session
      * @param message
      * @throws Exception
