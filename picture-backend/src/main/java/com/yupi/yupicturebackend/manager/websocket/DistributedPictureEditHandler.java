@@ -49,7 +49,7 @@ public class DistributedPictureEditHandler extends TextWebSocketHandler {
     private PictureEditDistributedLockService lockService;
 
     @Resource
-    private PictureEditBroadcastPublisher broadcastPublisher;//用于广播所有通知类别消息
+    private PictureEditBroadcastPublisher broadcastPublisher;//用于广播所有通知类别消息，可能是PictureEditRedisPublisher或者PictureEDitRabbitPublisher，看yml配置
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
@@ -78,7 +78,7 @@ public class DistributedPictureEditHandler extends TextWebSocketHandler {
         PictureEditRequestMessage req = JSONUtil.toBean(message.getPayload(), PictureEditRequestMessage.class);
         User user = (User) session.getAttributes().get("user");
         Long pictureId = (Long) session.getAttributes().get("pictureId");
-        pictureEditEventProducer.publishEvent(req, session, user, pictureId);
+        pictureEditEventProducer.publishEvent(req, session, user, pictureId);//根据req中事件调用下面三个方法
     }
 
     /**

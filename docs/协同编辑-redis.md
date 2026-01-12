@@ -1,29 +1,33 @@
 # 协同编辑-redis
 
+[toc]
+
+
+
 这篇文档用于理清整个项目中的使用了redis的分布式协同编辑方案。
 
 模块的文件目录如下：
 
 ```txt
-websocket/
-├── WebSocketConfig
-└── WsHandshakeInterceptor
-
-disruptor/
-├── PictureEditEvent
-├── PictureEditEventDisruptorConfig
-├── PictureEditEventProducer
-└── PictureEditEventWorkHandler
-
-distributed/
-├── ├── PictureEditBroadcastPublisher
-│   ├── PictureEditDistributedLockService
-│   ├── PictureEditPubSubPayload
-│   ├── PictureEditRedisPublisher
-│   └── PictureEditRedisSubscriberConfig
-├── PictureEditSessionRegistry
-└── ├── DistributedPictureEditHandler
-    └── PictureEditHandler
+websocket
+├── disruptor                        // LMAX Disruptor 高性能队列相关
+│   ├── PictureEditEvent             // 编辑事件定义
+│   ├── PictureEditEventDisruptorConfig // Disruptor 配置
+│   ├── PictureEditEventProducer     // 事件生产者
+│   └── PictureEditEventWorkHandler  // 事件消费者/处理器
+├── distributed                      // 分布式相关功能
+│   └── mq                           // 消息队列/Redis PubSub
+│   ├── PictureEditBroadcastPublisher  (Interface) // 广播发布接口
+│   ├── PictureEditDistributedLockService // 分布式锁服务
+│   ├── PictureEditPubSubPayload       // 发布订阅消息载体
+│   ├── PictureEditRedisPublisher      // Redis 消息发布者
+│   ├── PictureEditRedisSubscriberConfig // Redis 订阅配置
+│   └── PictureEditSessionRegistry     // 分布式会话注册表
+├── model                            // 数据模型 (折叠中)
+├── DistributedPictureEditHandler    // 分布式图片编辑处理器
+├── PictureEditHandler               // 本地图片编辑处理器
+├── WebSocketConfig                  // WebSocket 全局配置
+└── WsHandshakeInterceptor           // WebSocket 握手拦截器
 ```
 
 
@@ -37,13 +41,13 @@ distributed/
 里面只有两个对象：
 
 ```java
-    //建立连接后的所有通信逻辑
-   @Autowired
-   private DistributedPictureEditHandler pictureEditHandler;
+//建立连接后的所有通信逻辑
+@Autowired
+private DistributedPictureEditHandler pictureEditHandler;
 
-    //负责验证和筛选连接请求
-    @Resource
-    private WsHandshakeInterceptor wsHandshakeInterceptor;
+//负责验证和筛选连接请求
+@Resource
+private WsHandshakeInterceptor wsHandshakeInterceptor;
 ```
 
 然后一个专门的注册方法 WebSocketHandlers的方法：
