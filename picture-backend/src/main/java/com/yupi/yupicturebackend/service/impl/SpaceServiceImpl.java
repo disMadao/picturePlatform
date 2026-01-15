@@ -26,11 +26,13 @@ import com.yupi.yupicturebackend.service.SpaceUserService;
 import com.yupi.yupicturebackend.service.UserService;
 import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -53,9 +55,18 @@ public class SpaceServiceImpl extends ServiceImpl<SpaceMapper, Space>
     private TransactionTemplate transactionTemplate;
 
     // 为了方便部署，注释掉分表
-//    @Resource
-//    @Lazy
-//    private DynamicShardingManager dynamicShardingManager;
+    @Resource
+    @Lazy
+    private DynamicShardingManager dynamicShardingManager;
+
+    //实现个分布式版本的锁
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+    /**
+     * 编辑锁 TTL：防止客户端断线未释放导致永久占用
+     */
+    private static final Duration LOCK_TTL = Duration.ofMinutes(3);
+
 
     /**
      * 创建空间
@@ -90,7 +101,15 @@ public class SpaceServiceImpl extends ServiceImpl<SpaceMapper, Space>
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "无权限创建指定级别的空间");
         }
         // 4. 控制同一用户只能创建一个私有空间、以及一个团队空间
-        String lock = String.valueOf(userId).intern();
+        String lock = String.valueOf(userId).intern();//将字符放入字符常量池，返回引用。确保全局唯一。
+        String lock_redis = "ws:create:space:" + lock;
+        Boolean ok = stringRedisTemplate.opsForValue().setIfAbsent(lock_redis, String.valueOf(userId), LOCK_TTL);
+        if (ok ||  stringRedisTemplate.hasKey(lock_redis) && stringRedisTemplate.opsForValue().get(lock_redis).equals(String.valueOf(userId))) {
+            stringRedisTemplate.expire(lock_redis, LOCK_TTL);
+            //把刚才的业务操作复制过来
+
+            stringRedisTemplate.delete(lock_redis);
+        }
         synchronized (lock) {
             Long newSpaceId = transactionTemplate.execute(status -> {
                 // 判断是否已有空间
@@ -112,8 +131,8 @@ public class SpaceServiceImpl extends ServiceImpl<SpaceMapper, Space>
                     result = spaceUserService.save(spaceUser);
                     ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "创建团队成员记录失败");
                 }
-//                // 创建分表（仅对团队空间生效）为方便部署，暂时不使用
-//                dynamicShardingManager.createSpacePictureTable(space);
+                // 创建分表（仅对团队空间生效）为方便部署，暂时不使用
+                dynamicShardingManager.createSpacePictureTable(space);
                 // 返回新写入的数据 id
                 return space.getId();
             });
