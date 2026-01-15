@@ -1,0 +1,107 @@
+# =================================
+# Docker 相关文件
+# =================================
+.env
+docker-compose-old.yml
+docker-compose.prod.yml
+docker-compose.yml
+.env.copy.example
+env copy.example
+
+# =================================
+# 大型数据/模型文件
+# =================================
+models.zip
+volumes.zip
+temp_model/
+volumes/
+
+# =================================
+# Python 特定文件
+# =================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# 虚拟环境
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+
+# =================================
+# IDE 和编辑器文件
+# =================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+.classpath
+
+# =================================
+# 操作系统文件
+# =================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# =================================
+# 日志和临时文件
+# =================================
+*.log
+*.tmp
+*.temp
+*.bak
+
+# =================================
+# 构建输出
+# =================================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# =================================
+# Jupyter Notebook
+# =================================
+.ipynb_checkpoints
+
+# =================================
+# 其他
+# =================================
+.dockerignore
+*.sqlite3
