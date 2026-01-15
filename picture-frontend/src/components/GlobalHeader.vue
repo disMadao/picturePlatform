@@ -4,9 +4,9 @@
       <a-col flex="200px">
         <router-link to="/">
           <div class="title-bar">
-            <img class="logo" src="../assets/logo.png" alt="logo" />
+            <img class="logo" src="../assets/volite.jpg" alt="logo" />
             <!-- 极简风格：站点标题改为通用名称，去掉原项目品牌文案 -->
-            <div class="title">图片平台</div>
+            <div class="title">忆存云图</div>
           </div>
         </router-link>
       </a-col>

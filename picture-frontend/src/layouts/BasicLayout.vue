@@ -12,7 +12,7 @@
       </a-layout>
       <a-layout-footer class="footer">
         <!-- 极简风格：统一为中性文案，去除原作者与站点外链 -->
-        <span>图片平台</span>
+        <span>忆存云图</span>
       </a-layout-footer>
     </a-layout>
   </div>

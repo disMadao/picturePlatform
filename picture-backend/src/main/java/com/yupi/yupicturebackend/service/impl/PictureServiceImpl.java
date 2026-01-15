@@ -483,12 +483,15 @@ public class PictureServiceImpl extends ServiceImpl<PictureMapper, Picture>
             boolean result = this.removeById(pictureId);
             ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
             // 更新空间的使用额度，释放额度
-            boolean update = spaceService.lambdaUpdate()
-                    .eq(Space::getId, oldPicture.getSpaceId())
-                    .setSql("totalSize = totalSize - " + oldPicture.getPicSize())
-                    .setSql("totalCount = totalCount - 1")
-                    .update();
-            ThrowUtils.throwIf(!update, ErrorCode.OPERATION_ERROR, "额度更新失败");
+            // 公共图库（spaceId 为 null）不需要更新空间额度，否则会导致 update 影响 0 行从而报错“额度更新失败”
+            if (oldPicture.getSpaceId() != null) {
+                boolean update = spaceService.lambdaUpdate()
+                        .eq(Space::getId, oldPicture.getSpaceId())
+                        .setSql("totalSize = totalSize - " + oldPicture.getPicSize())
+                        .setSql("totalCount = totalCount - 1")
+                        .update();
+                ThrowUtils.throwIf(!update, ErrorCode.OPERATION_ERROR, "额度更新失败");
+            }
             return true;
         });
         // 异步清理文件

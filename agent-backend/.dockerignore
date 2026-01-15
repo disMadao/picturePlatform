@@ -1,0 +1,21 @@
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+.env
+
+# 不要把 Milvus/MinIO/etcd 的历史数据打进 agent 镜像（会极大拖慢 build / push）
+volumes/
+
+*.log
+*.tmp
+.DS_Store
+
+

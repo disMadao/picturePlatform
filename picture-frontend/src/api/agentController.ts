@@ -5,7 +5,7 @@ import axios from 'axios'
 // Agent 后端基础地址
 // 注意：不要用 localhost，Windows 上可能优先解析到 IPv6 ::1，被 Docker/WSL relay 劫持到别的服务（如 MinIO Console:9001）这里应该使用agent的端口，我使用的是9002
 // 支持通过 Vite 环境变量覆盖：VITE_AGENT_BASE_URL
-const AGENT_BASE_URL = (import.meta as any).env?.VITE_AGENT_BASE_URL || 'http://127.0.0.1:9002'
+const AGENT_BASE_URL = (import.meta as any).env?.VITE_AGENT_BASE_URL || 'http://118.195.165.9:9002'
 
 const agentRequest = axios.create({
   baseURL: AGENT_BASE_URL,

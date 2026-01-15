@@ -1,37 +1,15 @@
 <template>
   <div id="agentSearchPage">
-    <!-- 简单模式切换：文本搜图 / 以图搜图 -->
-    <a-segmented
-      v-model:value="mode"
-      :options="[
-        { label: '文本搜图', value: 'text' },
-        { label: '以图搜图', value: 'image' },
-      ]"
-      style="margin-bottom: 16px"
-    />
-
-    <!-- 文本搜图输入框 -->
-    <div v-if="mode === 'text'" class="search-bar">
+    <!-- 统一输入：可输入文本，也可粘贴图片链接（或包含图片链接的描述） -->
+    <div class="search-bar">
       <a-input-search
-        v-model:value="queryText"
-        placeholder="用自然语言描述你想要的图片，如：夕阳下的城市街景，氛围感照片"
+        v-model:value="smartInput"
+        placeholder="输入文本描述，或直接粘贴图片链接（也可：描述 + 图片链接）"
         enter-button="智能搜索"
         size="large"
         @search="doSearch"
       />
-      <div class="hint">会自动在普通搜索和向量语义搜索之间选择合适的方式。</div>
-    </div>
-
-    <!-- 以图搜图：这里只支持输入图片地址，占位形式 -->
-    <div v-else class="search-bar">
-      <a-input-search
-        v-model:value="imageUrl"
-        placeholder="输入图片地址，使用向量数据库做以图搜图"
-        enter-button="以图搜图"
-        size="large"
-        @search="doSearch"
-      />
-      <div class="hint">图片上传和向量入库逻辑请按自己的向量数据库接入。</div>
+      <div class="hint">会自动从输入中提取可能的图片链接，并在文本搜图 / 以图搜图之间自动选择。</div>
     </div>
 
     <!-- 调试信息：展示 Agent 选择的模式和 ReAct 轨迹 -->
@@ -56,9 +34,7 @@ import PictureList from '@/components/PictureList.vue'
 import { agentSearchUsingPost, type AgentSearchData } from '@/api/agentController.ts'
 import { useLoginUserStore } from '@/stores/useLoginUserStore.ts'
 
-const mode = ref<'text' | 'image'>('text')
-const queryText = ref('')
-const imageUrl = ref('')
+const smartInput = ref('')
 const loginUserStore = useLoginUserStore()
 
 const loading = ref(false)
@@ -85,13 +61,43 @@ const reactDescription = computed(() => {
     .join('；')
 })
 
-const doSearch = async () => {
-  if (mode.value === 'text' && !queryText.value) {
-    message.warning('请输入搜索内容')
-    return
+const IMAGE_EXT_RE = /\.(png|jpe?g|webp|gif|bmp|svg)(\?.*)?$/i
+
+function cleanupUrlCandidate(url: string) {
+  // 去掉常见的尾部标点/括号
+  return url.replace(/[)\]}'"，。,.;；！!？?\s]+$/g, '')
+}
+
+function extractFirstUrl(input: string): string | undefined {
+  // 尽量保守：只抓 http(s) URL；避免把普通文本误识别
+  const match = input.match(/https?:\/\/[^\s]+/i)
+  if (!match?.[0]) return undefined
+  return cleanupUrlCandidate(match[0])
+}
+
+function extractSmartParams(input: string): { query_text?: string; image_url?: string } {
+  const raw = (input || '').trim()
+  if (!raw) return {}
+
+  const url = extractFirstUrl(raw)
+  if (!url) {
+    return { query_text: raw }
   }
-  if (mode.value === 'image' && !imageUrl.value) {
-    message.warning('请输入图片地址')
+
+  // 只在“看起来像图片链接”时才走以图搜图；否则仍以文本为主，避免误判
+  const looksLikeImage = IMAGE_EXT_RE.test(url)
+  const textWithoutUrl = raw.replace(url, '').trim()
+
+  return {
+    query_text: textWithoutUrl || (looksLikeImage ? undefined : raw),
+    image_url: looksLikeImage ? url : undefined,
+  }
+}
+
+const doSearch = async () => {
+  const { query_text, image_url } = extractSmartParams(smartInput.value)
+  if (!query_text && !image_url) {
+    message.warning('请输入搜索内容或图片链接')
     return
   }
 
@@ -99,8 +105,8 @@ const doSearch = async () => {
   try {
     const res = await agentSearchUsingPost({
       user_id: loginUserStore.loginUser.id,
-      query_text: mode.value === 'text' ? queryText.value : undefined,
-      image_url: mode.value === 'image' ? imageUrl.value : undefined,
+      query_text,
+      image_url,
       mode: 'auto',
       top_k: 20,
     })

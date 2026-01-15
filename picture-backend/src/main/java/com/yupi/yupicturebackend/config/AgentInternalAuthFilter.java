@@ -38,6 +38,14 @@ import java.util.Map;
 public class AgentInternalAuthFilter extends OncePerRequestFilter {
 
     private static final String HEADER_INTERNAL_TOKEN = "X-Internal-Token";
+    /**
+     * 这些接口由 Python Agent 内部调用；当 internal token 匹配时，不做 IP 校验。
+     * 目的：避免 Docker/远程调用时 remoteAddr 不是 127.x 导致被拦截。
+     */
+    private static final String[] INTERNAL_NO_IP_CHECK_PATHS = new String[] {
+            "/picture/get/vo",
+            "/picture/list/page/vo"
+    };
 
     @Value("${agent.internalToken:}")
     private String internalToken;
@@ -81,11 +89,14 @@ public class AgentInternalAuthFilter extends OncePerRequestFilter {
             log.warn("Agent internalToken 未配置，但当前为 local 环境，启用 X-Internal-Token 兜底放行，uri={}", request.getRequestURI());
         }
         // 默认仅允许本机调用，避免 token 泄露带来风险
-        String remoteAddr = request.getRemoteAddr();
-        if (!(remoteAddr.startsWith("127.") || "0:0:0:0:0:0:0:1".equals(remoteAddr) || "::1".equals(remoteAddr))) {
-            log.warn("Agent internal token used from non-local address: {}", remoteAddr);
-            filterChain.doFilter(request, response);
-            return;
+        String uri = request.getRequestURI();
+        if (!isNoIpCheckPath(uri)) {
+            String remoteAddr = request.getRemoteAddr();
+            if (!(remoteAddr.startsWith("127.") || "0:0:0:0:0:0:0:1".equals(remoteAddr) || "::1".equals(remoteAddr))) {
+                log.warn("Agent internal token used from non-local address: {}", remoteAddr);
+                filterChain.doFilter(request, response);
+                return;
+            }
         }
 
 
@@ -121,6 +132,18 @@ public class AgentInternalAuthFilter extends OncePerRequestFilter {
         final String finalTokenValue = tokenValue;
         HttpServletRequest wrapped = new HeaderInjectRequestWrapper(request, Collections.singletonMap(tokenName, finalTokenValue));
         filterChain.doFilter(wrapped, response);
+    }
+
+    private boolean isNoIpCheckPath(String uri) {
+        if (uri == null || uri.isEmpty()) {
+            return false;
+        }
+        for (String p : INTERNAL_NO_IP_CHECK_PATHS) {
+            if (uri.endsWith(p)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private User getAdminUser() {

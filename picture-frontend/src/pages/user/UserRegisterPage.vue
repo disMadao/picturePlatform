@@ -1,7 +1,7 @@
 <template>
   <div id="userRegisterPage">
     <!-- 极简风格：注册页标题改为通用名称，去除原项目品牌 -->
-    <h2 class="title">图片平台 - 用户注册</h2>
+    <h2 class="title">忆存云图 - 用户注册</h2>
     <div class="desc">轻量级在线图片管理</div>
     <a-form :model="formState" name="basic" autocomplete="off" @finish="handleSubmit">
       <a-form-item name="userAccount" :rules="[{ required: true, message: '请输入账号' }]">

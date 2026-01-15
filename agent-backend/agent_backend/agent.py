@@ -72,6 +72,7 @@ class PictureSearchAgent:
 
         # 4. 调用 DeepSeek 做精细路由（如果配置了密钥）
         if query_text and deepseek_client.api_key:
+            # print("调用 DeepSeek 进行搜索模式决策\n")
             decision = deepseek_client.decide_search_mode(
                 query_text=query_text,
                 has_image=bool(image_url),

@@ -98,8 +98,11 @@ public class SpaceUserServiceImpl extends ServiceImpl<SpaceUserMapper, SpaceUser
         Long spaceId = spaceUser.getSpaceId();
         if (spaceId != null && spaceId > 0) {
             Space space = spaceService.getById(spaceId);
-            SpaceVO spaceVO = spaceService.getSpaceVO(space, request);
-            spaceUserVO.setSpace(spaceVO);
+            // space 可能已被删除（space_user 记录仍存在），此处避免 NPE
+            if (space != null) {
+                SpaceVO spaceVO = spaceService.getSpaceVO(space, request);
+                spaceUserVO.setSpace(spaceVO);
+            }
         }
         return spaceUserVO;
     }
