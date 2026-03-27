@@ -2,10 +2,7 @@ package com.yupi.yupicturebackend.manager.upload;
 
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.http.HttpResponse;
-import cn.hutool.http.HttpStatus;
-import cn.hutool.http.HttpUtil;
-import cn.hutool.http.Method;
+import cn.hutool.http.*;
 import com.yupi.yupicturebackend.exception.BusinessException;
 import com.yupi.yupicturebackend.exception.ErrorCode;
 import com.yupi.yupicturebackend.exception.ThrowUtils;
@@ -86,6 +83,10 @@ public class UrlPictureUpload extends PictureUploadTemplate {
     protected void processFile(Object inputSource, File file) throws Exception {
         String fileUrl = (String) inputSource;
         // 下载文件到临时目录
-        HttpUtil.downloadFile(fileUrl, file);
+//        HttpUtil.downloadFile(fileUrl, file);
+        HttpRequest.get(fileUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+                .execute()
+                .writeBody(file);
     }
 }

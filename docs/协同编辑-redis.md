@@ -30,7 +30,17 @@ websocket
 └── WsHandshakeInterceptor           // WebSocket 握手拦截器
 ```
 
+## websocket连接需要存储的关系
 
+map1：<pictureid,userid> 存储正在编辑这个图片的用户
+
+map2：<pictureid, set<WebSocketSession>> 存储一起编辑这个图片的所有用户.
+
+如果是单机版的话，可以用两个concruthashmap。
+
+如果是分布式，比如用redis。只是需要多个实例都维护这么一份相同的关系。这就需要用到分布式锁。
+
+每个应用实例只维护本机的 关系，跨实例广播有 redis pub/sub完成，也就是维护上面的map2的时候，需要用到 redis。此时就不用java对象的map1了，而是使用redis的键值对实现 map1。
 
 
 

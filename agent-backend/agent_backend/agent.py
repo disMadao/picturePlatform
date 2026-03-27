@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import json
+import logging
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .deepseek_client import deepseek_client
 from .java_client import java_client
 from .vector_store import VectorSearchResult, vector_client
+from . import conversation as conv_db
+
+logger = logging.getLogger(__name__)
 
 
 class SearchMode(str, Enum):
@@ -114,15 +121,29 @@ class PictureSearchAgent:
         根据向量库返回的 picture_id 列表，调用 Java 后端补齐 PictureVO 信息。
         """
         pictures: List[Dict[str, Any]] = []
-        for item in results:
-            pic = java_client.get_picture_vo_by_id(item.picture_id)
-            if pic:
-                pic["__vector_score__"] = item.score
-                pictures.append(pic)
+        if not results:
+            return pictures
+
+        # 并行回查 Java 后端，避免串行导致总耗时累加
+        max_workers = min(8, len(results))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(java_client.get_picture_vo_by_id, item.picture_id): item
+                for item in results
+            }
+            for future in as_completed(future_map):
+                item = future_map[future]
+                try:
+                    pic = future.result()
+                except Exception:
+                    pic = None
+                if pic:
+                    pic["__vector_score__"] = item.score
+                    pictures.append(pic)
         steps.append(
             ReActStep(
                 thought="根据向量库返回的 picture_id，从 Java 后端加载完整的 PictureVO。",
-                action="java_client.get_picture_vo_by_id for each result",
+                action=f"java_client.get_picture_vo_by_id in parallel (workers={max_workers})",
                 observation=f"成功补全 {len(pictures)} 条图片信息。",
             )
         )
@@ -241,8 +262,182 @@ class PictureSearchAgent:
 
         # 合并步骤轨迹，保证从决策到工具调用的完整 ReAct 链路
         result.steps = steps + result.steps
-        print("result = ", result, "\n\n")
         return result
+
+    # --------------- 对话模式 ---------------
+
+    _CHAT_SYSTEM_PROMPT = (
+        "你是一个图片搜索助手，运行在一个图片平台上。你可以：\n"
+        "1. 和用户自然对话，回答关于图片、摄影、设计等方面的问题\n"
+        "2. 帮用户搜索图片——当用户想搜索图片时，你必须在回复中包含一个特殊标记：\n"
+        "   [SEARCH_PICTURES:搜索关键词]\n"
+        "   例如用户说「帮我找几张夕阳的照片」，你应该回复类似：\n"
+        "   好的，我来帮你搜索夕阳相关的图片。[SEARCH_PICTURES:夕阳风景照]\n"
+        "3. 如果用户提供了图片链接想找相似图片，使用标记：\n"
+        "   [SEARCH_BY_IMAGE:图片URL]\n"
+        "\n"
+        "规则：\n"
+        "- 只有在用户明确想搜索图片时才使用 [SEARCH_PICTURES:...] 标记\n"
+        "- 普通闲聊、提问不要触发搜索\n"
+        "- 每次回复最多包含一个搜索标记\n"
+        "- 搜索标记中的关键词应该是提炼后的有效搜索词，不要原样复制用户的长句子\n"
+        "- 回复要简洁自然"
+    )
+
+    _SEARCH_PATTERN = re.compile(r"\[SEARCH_PICTURES:(.+?)\]")
+    _IMAGE_SEARCH_PATTERN = re.compile(r"\[SEARCH_BY_IMAGE:(.+?)\]")
+
+    def chat(
+        self,
+        conversation_id: int,
+        user_message: str,
+        user_id: int,
+        image_url: Optional[str] = None,
+        top_k: int = 3,
+    ) -> Dict[str, Any]:
+        """
+        对话式入口。
+        返回 {"role", "contentType", "content", "extra"} 形式的 assistant 消息。
+        """
+        # 1. 保存用户消息
+        user_extra = {"image_url": image_url} if image_url else None
+        conv_db.add_message(
+            conversation_id=conversation_id,
+            role="user",
+            content=user_message,
+            content_type="text",
+            extra=user_extra,
+        )
+        conv_db.touch_conversation(conversation_id)
+
+        # 2. 如果首条消息，自动设置对话标题
+        all_msgs = conv_db.list_messages(conversation_id)
+        user_msgs = [m for m in all_msgs if m["role"] == "user"]
+        if len(user_msgs) == 1:
+            title = user_message[:50] if len(user_message) > 50 else user_message
+            conv_db.update_conversation_title(conversation_id, title)
+
+        # 3. 拼 LLM 上下文
+        recent = conv_db.get_recent_messages(conversation_id, limit=20)
+        llm_messages: List[Dict[str, str]] = []
+        for m in recent:
+            role = m["role"]
+            if role not in ("user", "assistant"):
+                continue
+            text = m.get("content") or ""
+            if m.get("contentType") == "search_result" and m.get("extra"):
+                extra = m["extra"] if isinstance(m["extra"], dict) else {}
+                pic_count = len(extra.get("pictures", []))
+                text = f"{text}"
+            llm_messages.append({"role": role, "content": text})
+
+        # 4. 调用 DeepSeek 对话
+        if not deepseek_client.api_key:
+            # 没有配置 LLM，走纯搜索兜底
+            return self._fallback_search_chat(
+                conversation_id, user_message, image_url, top_k
+            )
+
+        try:
+            llm_reply = deepseek_client.chat_with_history(
+                messages=llm_messages,
+                system_prompt=self._CHAT_SYSTEM_PROMPT,
+            )
+        except Exception as e:
+            logger.warning("DeepSeek 对话调用失败: %s", e)
+            return self._fallback_search_chat(
+                conversation_id, user_message, image_url, top_k
+            )
+
+        # 5. 解析 LLM 回复，看是否需要触发搜索
+        search_match = self._SEARCH_PATTERN.search(llm_reply)
+        image_search_match = self._IMAGE_SEARCH_PATTERN.search(llm_reply)
+
+        if image_url and not image_search_match:
+            # 用户提供了图片链接但 LLM 没输出标记，主动触发以图搜图
+            clean_reply = llm_reply
+            return self._do_search_and_save(
+                conversation_id, clean_reply, None, image_url, top_k
+            )
+
+        if image_search_match:
+            img_url = image_search_match.group(1).strip()
+            clean_reply = self._IMAGE_SEARCH_PATTERN.sub("", llm_reply).strip()
+            return self._do_search_and_save(
+                conversation_id, clean_reply, None, img_url, top_k
+            )
+
+        if search_match:
+            query = search_match.group(1).strip()
+            clean_reply = self._SEARCH_PATTERN.sub("", llm_reply).strip()
+            return self._do_search_and_save(
+                conversation_id, clean_reply, query, None, top_k
+            )
+
+        # 6. 普通对话，直接保存文本回复
+        conv_db.add_message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=llm_reply,
+            content_type="text",
+        )
+        return {
+            "role": "assistant",
+            "contentType": "text",
+            "content": llm_reply,
+            "extra": None,
+        }
+
+    def _do_search_and_save(
+        self,
+        conversation_id: int,
+        reply_text: str,
+        query_text: Optional[str],
+        image_url: Optional[str],
+        top_k: int,
+    ) -> Dict[str, Any]:
+        """执行搜索并将结果作为 assistant 消息存入数据库。"""
+        result = self.search(
+            query_text=query_text,
+            image_url=image_url,
+            mode=SearchMode.AUTO,
+            top_k=top_k,
+        )
+        extra = {
+            "mode": result.mode.value,
+            "pictures": result.pictures,
+            "steps": [s.__dict__ for s in result.steps],
+        }
+        content = reply_text or f"为你找到了 {len(result.pictures)} 张相关图片"
+        conv_db.add_message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=content,
+            content_type="search_result",
+            extra=extra,
+        )
+        return {
+            "role": "assistant",
+            "contentType": "search_result",
+            "content": content,
+            "extra": extra,
+        }
+
+    def _fallback_search_chat(
+        self,
+        conversation_id: int,
+        user_message: str,
+        image_url: Optional[str],
+        top_k: int,
+    ) -> Dict[str, Any]:
+        """没有 LLM 时的兜底：直接走搜索。"""
+        return self._do_search_and_save(
+            conversation_id,
+            "",
+            user_message if not image_url else None,
+            image_url,
+            top_k,
+        )
 
 
 picture_search_agent = PictureSearchAgent()

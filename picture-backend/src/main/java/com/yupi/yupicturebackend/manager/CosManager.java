@@ -84,6 +84,16 @@ public class CosManager {
         putObjectRequest.setPicOperations(picOperations);
         return cosClient.putObject(putObjectRequest);
     }
+    /**
+     * 上传视频（原始文件，不进行处理）
+     *
+     * @param key  对象键
+     * @param file 视频文件
+     * @return 上传结果
+     */
+    public PutObjectResult putVideoObject(String key, File file) {
+        return putObject(key, file);
+    }
 
     /**
      * 删除对象

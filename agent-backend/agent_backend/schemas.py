@@ -51,3 +51,30 @@ class BaseResponse(BaseModel):
   message: str = "ok"
 
 
+# --------------- 对话模块 ---------------
+
+class CreateConversationRequest(BaseModel):
+  user_id: int
+
+class SendMessageRequest(BaseModel):
+  user_id: int
+  conversation_id: int
+  content: str = Field(description="用户输入的文本")
+  image_url: Optional[str] = Field(default=None, description="可选的图片 URL（以图搜图）")
+
+class ConversationVO(BaseModel):
+  id: int
+  title: Optional[str] = None
+  createTime: str
+  updateTime: str
+
+class MessageVO(BaseModel):
+  id: int
+  conversationId: int
+  role: str
+  contentType: str
+  content: Optional[str] = None
+  extra: Optional[Dict[str, Any]] = None
+  createTime: str
+
+

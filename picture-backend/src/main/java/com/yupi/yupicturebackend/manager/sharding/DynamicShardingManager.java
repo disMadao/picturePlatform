@@ -17,6 +17,7 @@ import org.springframework.stereotype.Component;
 import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
 import javax.sql.DataSource;
+import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Collections;
 import java.util.List;
@@ -24,7 +25,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-//@Component
+
+@Component
 @Slf4j
 public class DynamicShardingManager {
 
@@ -38,10 +40,31 @@ public class DynamicShardingManager {
 
     private static final String DATABASE_NAME = "logic_db"; // 配置文件中的数据库名称
 
+    /**
+     * 仅当 spring.shardingsphere 生效、DataSource 为 ShardingSphere 包装时为 true。
+     * 使用 {@code application-prod.yml} 等纯 JDBC 数据源时不能 unwrap，否则启动失败。
+     */
+    private boolean isShardingSphereDataSource() {
+        try (Connection conn = dataSource.getConnection()) {
+            return conn.isWrapperFor(ShardingSphereConnection.class);
+        } catch (SQLException e) {
+            log.debug("检测数据源是否为 ShardingSphere 失败: {}", e.getMessage());
+            return false;
+        }
+    }
+
     @PostConstruct
     public void initialize() {
-        log.info("初始化动态分表配置...");
-        updateShardingTableNodes();
+        if (!isShardingSphereDataSource()) {
+            log.info("当前数据源非 ShardingSphere，跳过动态分表初始化（纯 JDBC 环境属正常情况）。");
+            return;
+        }
+        try {
+            log.info("初始化动态分表配置...");
+            updateShardingTableNodes();
+        } catch (Exception e) {
+            log.warn("初始化动态分表配置失败，将继续启动应用: {}", e.getMessage());
+        }
     }
 
     /**
@@ -66,6 +89,9 @@ public class DynamicShardingManager {
      * 更新 ShardingSphere 的 actual-data-nodes 动态表名配置
      */
     private void updateShardingTableNodes() {
+        if (!isShardingSphereDataSource()) {
+            return;
+        }
         Set<String> tableNames = fetchAllPictureTableNames();
         // yu_picture.picture_112321321,yu_picture.picture_1123213123
         String newActualDataNodes = tableNames.stream()

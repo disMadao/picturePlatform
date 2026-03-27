@@ -1,31 +1,93 @@
-from fastapi import FastAPI
+import os
+import logging
+
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent_backend.agent import picture_search_agent
-from agent_backend.schemas import AgentSearchRequest, AgentSearchResponse, BaseResponse
+from agent_backend.schemas import (
+    AgentSearchRequest,
+    AgentSearchResponse,
+    BaseResponse,
+    CreateConversationRequest,
+    SendMessageRequest,
+)
 from agent_backend.history import log_search
+from agent_backend import conversation as conv_db
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Picture Agent Backend")
 
-# 允许前端本地联调（可按需收紧）
+# ---- CORS：只允许你自己的前端域名 ----
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://localhost:8123,http://118.195.165.9",
+    ).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    # Agent 前端请求不依赖 cookie，关闭 credentials，避免与 "*" origin 组合导致浏览器拦截
-    allow_credentials=False,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+
+# --------------- 对话管理 ---------------
+
+@app.post("/agent/conversation/create", response_model=BaseResponse)
+def create_conversation(req: CreateConversationRequest) -> BaseResponse:
+    cid = conv_db.create_conversation(user_id=req.user_id)
+    return BaseResponse(code=0, data={"id": cid})
+
+
+@app.get("/agent/conversation/list", response_model=BaseResponse)
+def list_conversations(user_id: int = Query(...)) -> BaseResponse:
+    rows = conv_db.list_conversations(user_id=user_id)
+    return BaseResponse(code=0, data=rows)
+
+
+@app.post("/agent/conversation/delete", response_model=BaseResponse)
+def delete_conversation(
+    user_id: int = Query(...),
+    conversation_id: int = Query(...),
+) -> BaseResponse:
+    ok = conv_db.delete_conversation(user_id=user_id, conversation_id=conversation_id)
+    if not ok:
+        return BaseResponse(code=40400, message="对话不存在或无权限")
+    return BaseResponse(code=0)
+
+
+@app.get("/agent/conversation/messages", response_model=BaseResponse)
+def list_messages(conversation_id: int = Query(...)) -> BaseResponse:
+    msgs = conv_db.list_messages(conversation_id=conversation_id)
+    return BaseResponse(code=0, data=msgs)
+
+
+# --------------- 对话式聊天（核心入口） ---------------
+
+@app.post("/agent/chat", response_model=BaseResponse)
+def agent_chat(req: SendMessageRequest) -> BaseResponse:
+    result = picture_search_agent.chat(
+        conversation_id=req.conversation_id,
+        user_message=req.content,
+        user_id=req.user_id,
+        image_url=req.image_url,
+    )
+    print(result)
+    return BaseResponse(code=0, data=result)
+
+
+# --------------- 兼容旧版搜索接口 ---------------
+
 @app.post("/agent/search", response_model=BaseResponse)
 def agent_search(req: AgentSearchRequest) -> BaseResponse:
-    """
-    Agent 统一搜索入口。
-    - 支持纯文本搜索（关键词 / 语义）
-    - 支持以图搜图（通过 image_url）
-    - mode=auto 时自动在原有后端 / 向量文本 / 向量图片之间做路由（ReAct 风格决策）
-    """
     result = picture_search_agent.search(
         query_text=req.query_text,
         image_url=req.image_url,
@@ -37,33 +99,23 @@ def agent_search(req: AgentSearchRequest) -> BaseResponse:
         pictures=result.pictures,
         steps=[step.__dict__ for step in result.steps],
     )
-    # 将本次对话（搜索请求 + Agent 决策）记录到数据库
     try:
         log_search(user_id=req.user_id, request=req, result=result)
     except Exception:
-        # 记录失败不影响主流程，后续可按需加日志
         pass
     return BaseResponse(code=0, data=resp_data.dict(), message="ok")
 
 
 @app.get("/health")
 def health() -> BaseResponse:
-    """
-    健康检查接口，便于前后端联动自测。
-    """
     return BaseResponse(code=0, data={"status": "ok"}, message="ok")
 
 
-# 不生成启动脚本，具体启动命令可由使用者自行决定：
-# uvicorn main:app --host 0.0.0.0 --port 9002
-
-
-# 在 main.py 文件末尾添加
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=int(__import__("os").getenv("AGENT_PORT", "9002")),
-        log_level="info"
+        app,
+        host="0.0.0.0",
+        port=int(os.getenv("AGENT_PORT", "9002")),
+        log_level="info",
     )

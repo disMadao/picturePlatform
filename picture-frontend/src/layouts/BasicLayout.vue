@@ -5,13 +5,12 @@
         <GlobalHeader />
       </a-layout-header>
       <a-layout>
-        <GlobalSider class="sider" />
-        <a-layout-content class="content">
+        <GlobalSider v-if="!isChatPage" class="sider" />
+        <a-layout-content :class="isChatPage ? 'content-chat' : 'content'">
           <router-view />
         </a-layout-content>
       </a-layout>
-      <a-layout-footer class="footer">
-        <!-- 极简风格：统一为中性文案，去除原作者与站点外链 -->
+      <a-layout-footer v-if="!isChatPage" class="footer">
         <span>忆存云图</span>
       </a-layout-footer>
     </a-layout>
@@ -19,14 +18,18 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import GlobalHeader from '@/components/GlobalHeader.vue'
-import GlobalSider from "@/components/GlobalSider.vue";
+import GlobalSider from '@/components/GlobalSider.vue'
+
+const route = useRoute()
+const isChatPage = computed(() => route.path === '/agent/chat')
 </script>
 
 <style scoped>
 #basicLayout .header {
   padding-inline: 20px;
-  /* 极简风格：统一使用纯白背景和细分割线 */
   background: #ffffff;
   color: unset;
   margin-bottom: 1px;
@@ -46,9 +49,15 @@ import GlobalSider from "@/components/GlobalSider.vue";
 
 #basicLayout .content {
   padding: 28px;
-  /* 极简风格：去掉渐变背景，改为统一浅灰色 */
   background: #f7f7f7;
   margin-bottom: 28px;
+}
+
+#basicLayout .content-chat {
+  padding: 0;
+  background: #fff;
+  margin-bottom: 0;
+  overflow: hidden;
 }
 
 #basicLayout .footer {

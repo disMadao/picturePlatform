@@ -23,8 +23,10 @@ class BackendConfig(BaseModel):
     # MySQL 数据库配置（默认与 Java 后端相同，可通过环境变量覆盖）
     db_host: str = os.getenv("MYSQL_HOST", "127.0.0.1")
     db_port: int = int(os.getenv("MYSQL_PORT", "3306"))
-    db_user: str = os.getenv("MYSQL_USER", "meizijun")
-    db_password: str = os.getenv("MYSQL_PASSWORD", "meizijun_mima_123")
+    db_user: str = os.getenv("MYSQL_USER", "root") # 这里暂时改成用本地的，后面上传记得改回线上的
+    db_password: str = os.getenv("MYSQL_PASSWORD","root")
+    # db_user: str = os.getenv("MYSQL_USER", "meizijun")
+    # db_password: str = os.getenv("MYSQL_PASSWORD", "meizijun_mima_123")
     db_name: str = os.getenv("MYSQL_DB", "yu_picture")
 
 

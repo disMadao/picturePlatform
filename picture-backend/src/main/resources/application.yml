@@ -12,18 +12,18 @@ spring:
   profiles:
     active: local  # 改为生产环境
   # 数据库配置
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://118.195.165.9:3306/yu_picture?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai
-    username: meizijun
-    password: meizijun_mima_123
-  # Redis 配置
-  redis:
-    database: 0
-    host: 118.195.165.9
-    port: 6379
-    password: meizijun_mima_123  # 添加密码配置
-    timeout: 10000ms  # 增加超时时间
+#  datasource:
+#    driver-class-name: com.mysql.cj.jdbc.Driver
+#    url: jdbc:mysql://118.195.165.9:3306/yu_picture?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai
+#    username: meizijun
+#    password: meizijun_mima_123
+#  # Redis 配置
+#  redis:
+#    database: 0
+#    host: 118.195.165.9
+#    port: 6379
+#    password: meizijun_mima_123  # 添加密码配置
+#    timeout: 10000ms  # 增加超时时间
 
 
   # Session 配置
@@ -95,6 +95,7 @@ mybatis-plus:
 #        api-rule-resources:
 #          - com.yupi.yupicturebackend.controller
 knife4j:
+  enable: true
   basic:
     enable: true
     username: root
@@ -114,10 +115,7 @@ knife4j:
 #  apiKey: xxx
 
 ## DeepSeek LLM 配置（用于自动生成图片简介和标签等）
-#deepseek:
-#  apiKey: xxx
-#  apiBase: https://api.deepseek.com
-#  model: deepseek-chat
+
 
 # WebSocket 协同编辑跨实例广播方式：
 # - redis：Redis Pub/Sub（默认，轻量但订阅端断线可能丢消息）

@@ -16,6 +16,7 @@ import SpaceAnalyzePage from '@/pages/SpaceAnalyzePage.vue'
 import SpaceUserManagePage from '@/pages/admin/SpaceUserManagePage.vue'
 import UserExchangeVipPage from '@/pages/UserExchangeVipPage.vue'
 import AgentSearchPage from '@/pages/AgentSearchPage.vue'
+import AgentPage from '@/pages/agent/AgentPage.vue'
 
 // 极简风格：去除原项目作者与品牌说明，保留路由配置本身
 const router = createRouter({
@@ -98,6 +99,11 @@ const router = createRouter({
       path: '/agent',
       name: '智能搜索',
       component: AgentSearchPage,
+    },
+    {
+      path: '/agent/chat',
+      name: '智能助手',
+      component: AgentPage,
     },
     {
       path: '/search_picture',

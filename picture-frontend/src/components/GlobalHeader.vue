@@ -75,6 +75,11 @@ const originItems = [
     title: '智能搜索',
   },
   {
+    key: '/agent/chat',
+    label: '智能助手',
+    title: '智能助手',
+  },
+  {
     key: '/add_picture',
     label: '创建图片',
     title: '创建图片',

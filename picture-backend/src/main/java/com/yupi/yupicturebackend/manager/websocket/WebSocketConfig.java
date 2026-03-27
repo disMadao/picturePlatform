@@ -17,7 +17,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     //建立连接后的所有通信逻辑
     // @Resource
-    //  private PictureEditHandler pictureEditHandler;
+//      private PictureEditHandler pictureEditHandler;
    @Autowired
    private DistributedPictureEditHandler pictureEditHandler;
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 
@@ -74,6 +74,33 @@ class DeepSeekClient:
         if "vector_text" in content:
             return "vector_text"
         return "backend"
+
+
+    def chat_with_history(
+        self,
+        messages: List[Dict[str, str]],
+        system_prompt: str,
+    ) -> str:
+        """
+        带历史消息的对话补全。
+        messages: [{"role": "user"/"assistant", "content": "..."}]
+        返回 LLM 的文本回复。
+        """
+        full_messages = [{"role": "system", "content": system_prompt}] + messages
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "messages": full_messages,
+            "temperature": 0.7,
+        }
+        resp = self._client.post(
+            f"{self.api_base.rstrip('/')}/chat/completions",
+            headers=self._headers(),
+            json=payload,
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"].strip()
 
 
 deepseek_client = DeepSeekClient()

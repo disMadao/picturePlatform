@@ -2,15 +2,16 @@
 /* eslint-disable */
 import axios from 'axios'
 
-// Agent 后端基础地址
-// 注意：不要用 localhost，Windows 上可能优先解析到 IPv6 ::1，被 Docker/WSL relay 劫持到别的服务（如 MinIO Console:9001）这里应该使用agent的端口，我使用的是9002
-// 支持通过 Vite 环境变量覆盖：VITE_AGENT_BASE_URL
-const AGENT_BASE_URL = (import.meta as any).env?.VITE_AGENT_BASE_URL || 'http://118.195.165.9:9002'
+const AGENT_BASE_URL =
+  // (import.meta as any).env?.VITE_AGENT_BASE_URL || 'http://118.195.165.9:9002'
+   (import.meta as any).env?.VITE_AGENT_BASE_URL || 'http://localhost:9002'
 
 const agentRequest = axios.create({
   baseURL: AGENT_BASE_URL,
   timeout: 60000,
 })
+
+// --------------- 旧版搜索（保留兼容） ---------------
 
 export interface AgentSearchRequest {
   user_id?: number
@@ -38,10 +39,6 @@ export interface BaseResponseAgentSearchData_ {
   message?: string
 }
 
-/**
- * Agent 搜索
- * 与 Python Agent 后端的 /agent/search 对接
- */
 export async function agentSearchUsingPost(body: AgentSearchRequest) {
   return agentRequest<BaseResponseAgentSearchData_>('/agent/search', {
     method: 'POST',
@@ -49,4 +46,89 @@ export async function agentSearchUsingPost(body: AgentSearchRequest) {
   })
 }
 
+// --------------- 对话管理 ---------------
 
+export interface ConversationVO {
+  id: number
+  title?: string
+  createTime: string
+  updateTime: string
+}
+
+export interface MessageVO {
+  id: number
+  conversationId: number
+  role: 'user' | 'assistant' | 'system'
+  contentType: 'text' | 'search_result' | 'image' | 'video'
+  content?: string
+  extra?: {
+    mode?: string
+    pictures?: API.PictureVO[]
+    steps?: AgentSearchStep[]
+    image_url?: string
+    [key: string]: any
+  }
+  createTime: string
+}
+
+interface BaseResponse<T = any> {
+  code: number
+  data?: T
+  message?: string
+}
+
+export async function createConversation(userId: number) {
+  return agentRequest<BaseResponse<{ id: number }>>('/agent/conversation/create', {
+    method: 'POST',
+    data: { user_id: userId },
+  })
+}
+
+export async function listConversations(userId: number) {
+  return agentRequest<BaseResponse<ConversationVO[]>>('/agent/conversation/list', {
+    method: 'GET',
+    params: { user_id: userId },
+  })
+}
+
+export async function deleteConversation(userId: number, conversationId: number) {
+  return agentRequest<BaseResponse>('/agent/conversation/delete', {
+    method: 'POST',
+    params: { user_id: userId, conversation_id: conversationId },
+  })
+}
+
+export async function listMessages(conversationId: number) {
+  return agentRequest<BaseResponse<MessageVO[]>>('/agent/conversation/messages', {
+    method: 'GET',
+    params: { conversation_id: conversationId },
+  })
+}
+
+// --------------- 聊天 ---------------
+
+export interface SendMessageRequest {
+  user_id: number
+  conversation_id: number
+  content: string
+  image_url?: string
+}
+
+export interface ChatResponseData {
+  role: string
+  contentType: 'text' | 'search_result' | 'image' | 'video'
+  content?: string
+  extra?: {
+    mode?: string
+    pictures?: API.PictureVO[]
+    steps?: AgentSearchStep[]
+    [key: string]: any
+  }
+}
+
+export async function sendMessage(body: SendMessageRequest) {
+  return agentRequest<BaseResponse<ChatResponseData>>('/agent/chat', {
+    method: 'POST',
+    data: body,
+  })
+}
