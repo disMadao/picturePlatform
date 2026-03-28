@@ -36,19 +36,44 @@
           <!-- 正在思考 -->
           <div v-if="sending" class="thinking">
             <div class="th-avatar"><RobotOutlined /></div>
-            <div class="th-text"><a-spin size="small" /> &nbsp;正在思考...</div>
+            <div class="th-text"><a-spin size="small" /> &nbsp;{{ sendingHint }}</div>
           </div>
         </div>
 
         <!-- 输入栏 -->
         <div class="input-bar">
+          <div class="input-toolbar">
+            <a-radio-group v-model:value="sessionMode" size="small" :disabled="sending">
+              <a-radio-button value="search">图片搜索</a-radio-button>
+              <a-radio-button value="video">视频生成</a-radio-button>
+            </a-radio-group>
+            <a-select
+              v-if="sessionMode === 'video'"
+              v-model:value="selectedSpaceId"
+              class="space-select"
+              placeholder="保存到哪个空间"
+              :disabled="sending"
+              :options="spaceOptions"
+            />
+            <span v-if="sessionMode === 'video' && !spaceOptions.length" class="space-hint">
+              暂无可用空间，请先在网站「空间」中创建私有空间
+            </span>
+            <a-input
+              v-if="sessionMode === 'video'"
+              v-model:value="firstFrameUrl"
+              class="frame-input"
+              placeholder="首帧图 URL（可选；若填写，方舟要求图高≥300px）"
+              :disabled="sending"
+              allow-clear
+            />
+          </div>
           <div class="input-card" :class="{ focus: inputFocus }">
             <a-textarea
               ref="inputEl"
               v-model:value="draft"
               :disabled="sending"
               :auto-size="{ minRows: 1, maxRows: 5 }"
-              :placeholder="sending ? '等待回复...' : '输入消息，例如「帮我找 10 张海边的图片」'"
+              :placeholder="inputPlaceholder"
               @focus="inputFocus = true"
               @blur="inputFocus = false"
               @pressEnter="onEnter"
@@ -82,7 +107,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { RobotOutlined, SendOutlined, PlusOutlined } from '@ant-design/icons-vue'
@@ -96,16 +121,24 @@ import {
   apiSendMessage,
   type ConversationVO,
   type MessageVO,
+  type SnowflakeId,
 } from '@/api/agentApi'
 import { useLoginUserStore } from '@/stores/useLoginUserStore'
+import { listSpaceVoByPageUsingPost } from '@/api/spaceController'
 
 const route = useRoute()
 const router = useRouter()
 const loginUserStore = useLoginUserStore()
-const uid = () => loginUserStore.loginUser.id as number | undefined
+
+/** 当前用户 id（字符串），雪花 Long 勿转 Number，否则丢精度导致查错用户 */
+const uid = (): string | undefined => {
+  const raw = loginUserStore.loginUser.id as unknown
+  if (raw == null || raw === '') return undefined
+  return typeof raw === 'string' ? raw : String(raw)
+}
 
 const convList = ref<ConversationVO[]>([])
-const activeId = ref<number>()
+const activeId = ref<SnowflakeId>()
 const msgs = ref<MessageVO[]>([])
 const draft = ref('')
 const sending = ref(false)
@@ -113,13 +146,28 @@ const loadingMsgs = ref(false)
 const inputFocus = ref(false)
 const scrollRef = ref<HTMLElement>()
 const inputEl = ref()
+const sessionMode = ref<'search' | 'video'>('search')
+const selectedSpaceId = ref<string>()
+const firstFrameUrl = ref('')
+const spaceOptions = ref<{ label: string; value: string }[]>([])
+
+const inputPlaceholder = computed(() => {
+  if (sending.value) return '等待回复...'
+  return sessionMode.value === 'video'
+    ? '描述要生成的视频内容（耗时较长，请耐心等待）'
+    : '输入消息，例如「帮我找 10 张海边的图片」'
+})
+
+const sendingHint = computed(() =>
+  sessionMode.value === 'video' ? '正在生成视频，请稍候…' : '正在思考...',
+)
 
 const toBottom = () => nextTick(() => {
   if (scrollRef.value) scrollRef.value.scrollTop = scrollRef.value.scrollHeight
 })
 
-const syncQuery = (id?: number) =>
-  router.replace({ path: '/agent/chat', query: id ? { id: String(id) } : {} })
+const syncQuery = (id?: SnowflakeId) =>
+  router.replace({ path: '/agent/chat', query: id != null && id !== '' ? { id: String(id) } : {} })
 
 // ---- 数据加载 ----
 const loadConvs = async () => {
@@ -127,13 +175,78 @@ const loadConvs = async () => {
   if (!u) return
   try {
     const r = await apiListConversations(u)
-    if (r.data.code === 0) convList.value = r.data.data ?? []
-  } catch (e) {
+    if (r.data.code === 0) {
+      const rows = r.data.data ?? []
+      convList.value = rows.map(c => ({
+        ...c,
+        id: typeof c.id === 'string' ? c.id : String(c.id),
+      }))
+    } else {
+      message.warning(r.data.message || '加载对话列表失败')
+    }
+  } catch (e: any) {
     console.error(e)
+    message.error(
+      '无法连接智能助手服务（请确认本机已启动 Agent:9002，且用 npm run dev 走 Vite 代理）：' +
+        (e?.message || String(e)),
+    )
   }
 }
 
-const loadMsgs = async (cid: number) => {
+/** 空间 id 与 user id 同为雪花，禁止 Number()，否则 Java getById 查不到 →「空间不存在」 */
+const parseSpaceId = (s: API.SpaceVO): string | undefined => {
+  const raw = s.id as unknown
+  if (raw == null || raw === '') return undefined
+  return typeof raw === 'string' ? raw : String(raw)
+}
+
+/** 默认选私有空间，否则第一条（与 MySpacePage 一致：个人空间 spaceType=0） */
+const pickDefaultSpaceId = (records: API.SpaceVO[]) => {
+  const withId = records
+    .map(s => ({ s, id: parseSpaceId(s) }))
+    .filter((x): x is { s: API.SpaceVO; id: string } => x.id != null)
+  if (!withId.length) return undefined
+  const priv = withId.find(x => x.s.spaceType === 0)
+  return (priv ?? withId[0]).id
+}
+
+/** 仅调 Java /space/list/page/vo（pageSize≤20），与「我的空间」同一数据源 */
+const loadSpaces = async () => {
+  const u = uid()
+  if (!u) return
+  try {
+    const r = await listSpaceVoByPageUsingPost({
+      current: 1,
+      pageSize: 20,
+      userId: u,
+    })
+    if (r.data.code !== 0) {
+      spaceOptions.value = []
+      message.warning(r.data.message || '加载空间失败')
+      return
+    }
+    const records = r.data.data?.records ?? []
+    spaceOptions.value = records
+      .map(s => {
+        const id = parseSpaceId(s)
+        if (id == null) return null
+        return {
+          label:
+            (s.spaceType === 0 ? '【私有】' : '【团队】') +
+            (s.spaceName || `空间 ${id}`),
+          value: id,
+        }
+      })
+      .filter((o): o is { label: string; value: string } => o != null)
+    selectedSpaceId.value = pickDefaultSpaceId(records)
+  } catch (e) {
+    console.error(e)
+    spaceOptions.value = []
+    message.error('加载空间列表失败')
+  }
+}
+
+const loadMsgs = async (cid: SnowflakeId) => {
   loadingMsgs.value = true
   try {
     const r = await apiListMessages(cid)
@@ -151,7 +264,7 @@ const onNewConv = async () => {
   try {
     const r = await apiCreateConversation(u)
     if (r.data.code === 0 && r.data.data) {
-      const nid = r.data.data.id
+      const nid = String(r.data.data.id)
       await loadConvs()
       activeId.value = nid
       msgs.value = []
@@ -163,19 +276,19 @@ const onNewConv = async () => {
   }
 }
 
-const onSelectConv = async (id: number) => {
-  if (id === activeId.value) return
+const onSelectConv = async (id: SnowflakeId) => {
+  if (String(id) === String(activeId.value ?? '')) return
   activeId.value = id
   syncQuery(id)
   await loadMsgs(id)
 }
 
-const onDeleteConv = async (id: number) => {
+const onDeleteConv = async (id: SnowflakeId) => {
   const u = uid()
   if (!u) return
   try {
     await apiDeleteConversation(u, id)
-    if (activeId.value === id) { activeId.value = undefined; msgs.value = []; syncQuery() }
+    if (String(activeId.value ?? '') === String(id)) { activeId.value = undefined; msgs.value = []; syncQuery() }
     await loadConvs()
   } catch { message.error('删除失败') }
 }
@@ -195,6 +308,13 @@ const doSend = async () => {
   const u = uid()
   if (!u) { message.warning('请先登录'); return }
 
+  if (sessionMode.value === 'video') {
+    if (selectedSpaceId.value == null) {
+      message.warning('请先选择保存视频的空间')
+      return
+    }
+  }
+
   // 先追加用户消息到界面
   const tmpUser: MessageVO = {
     id: Date.now(),
@@ -209,12 +329,21 @@ const doSend = async () => {
   toBottom()
 
   sending.value = true
+  const videoTimeout = 600_000
   try {
-    const r = await apiSendMessage({
-      user_id: u,
-      conversation_id: activeId.value,
-      content: text,
-    })
+    const r = await apiSendMessage(
+      {
+        user_id: u,
+        conversation_id: activeId.value,
+        content: text,
+        session_intent: sessionMode.value,
+        space_id: sessionMode.value === 'video' ? selectedSpaceId.value : undefined,
+        first_frame_url: sessionMode.value === 'video' && firstFrameUrl.value.trim()
+          ? firstFrameUrl.value.trim()
+          : undefined,
+      },
+      { timeout: sessionMode.value === 'video' ? videoTimeout : 120_000 },
+    )
     if (r.data.code === 0 && r.data.data) {
       const d = r.data.data
       msgs.value.push({
@@ -237,18 +366,37 @@ const doSend = async () => {
   sending.value = false
 }
 
-// ---- 初始化 ----
-onMounted(async () => {
+watch(sessionMode, mode => {
+  if (mode === 'video' && !spaceOptions.value.length) loadSpaces()
+})
+
+/** 拉会话 + 空间 + 选中对话 */
+const bootstrapAgentPage = async () => {
+  if (uid() == null) return
+
   await loadConvs()
-  const qid = Number(route.query.id)
-  if (qid && convList.value.some(c => c.id === qid)) {
+  await loadSpaces()
+
+  const raw = route.query.id
+  const qid = Array.isArray(raw) ? raw[0] : raw
+  const match = (cid: string) => convList.value.some(c => String(c.id) === cid)
+  if (qid && typeof qid === 'string' && match(qid)) {
     activeId.value = qid
     await loadMsgs(qid)
   } else if (convList.value.length) {
-    activeId.value = convList.value[0].id
-    syncQuery(convList.value[0].id)
-    await loadMsgs(convList.value[0].id)
+    const first = convList.value[0].id
+    activeId.value = first
+    syncQuery(first)
+    await loadMsgs(first)
   }
+}
+
+// 挂载后再拉：保证路由守卫里 fetchLoginUser 已执行完毕，且本页再 merge 一次登录态
+onMounted(async () => {
+  await nextTick()
+  await loginUserStore.fetchLoginUser()
+  if (uid() == null) return
+  await bootstrapAgentPage()
 })
 </script>
 
@@ -296,6 +444,13 @@ onMounted(async () => {
 
 /* 输入栏 */
 .input-bar { padding: 14px 44px 20px; border-top: 1px solid #f0f0f0; background: #fff; }
+.input-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  max-width: 780px; margin: 0 auto 10px;
+}
+.space-select { min-width: 160px; flex: 1; max-width: 240px; }
+.space-hint { font-size: 12px; color: #fa8c16; width: 100%; }
+.frame-input { flex: 2; min-width: 180px; }
 .input-card {
   display: flex; align-items: flex-end; gap: 8px;
   background: #f7f8fa; border: 1px solid #e0e0e0; border-radius: 12px;

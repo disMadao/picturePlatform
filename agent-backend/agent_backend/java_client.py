@@ -16,7 +16,6 @@ class JavaBackendClient:
         self.base_url = base_url or config.java_base_url
         # 可选：Java 后端内部调用鉴权（推荐），避免在 Agent 中保存账号密码
         internal_token = os.getenv("AGENT_INTERNAL_TOKEN")
-        print("我拿到了这个特殊的token = ", internal_token)
         # 复用 cookies（Java 后端登录态依赖 HttpSession + Sa-Token 的 cookie）
         headers = {}
         if internal_token:
@@ -66,15 +65,23 @@ class JavaBackendClient:
     def _request_json(self, method: str, path: str, **kwargs) -> dict:
         """
         统一请求封装：遇到 NOT_LOGIN（40100）时，自动登录并重试一次。
+        可选 request_timeout：单次请求超时秒数（如视频转存 COS 较慢）。
         """
-        resp = self._client.request(method, self._url(path), **kwargs)
+        req_timeout = kwargs.pop("request_timeout", None)
+
+        def _request(**kw: Any) -> Any:
+            if req_timeout is not None:
+                kw["timeout"] = req_timeout
+            return self._client.request(method, self._url(path), **kw)
+
+        resp = _request(**kwargs)
         resp.raise_for_status()
         data = resp.json()
         if data.get("code") == 40100:
             # 未登录：尝试登录并重试
             self._logged_in = False
             self._maybe_login()
-            resp2 = self._client.request(method, self._url(path), **kwargs)
+            resp2 = _request(**kwargs)
             resp2.raise_for_status()
             return resp2.json()
         return data
@@ -113,6 +120,27 @@ class JavaBackendClient:
         if data.get("code") != 0:
             return None
         return data.get("data")
+
+    def persist_agent_video(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        调用 Java POST /video/agent/persist，将方舟临时视频转 COS 并落库。
+        """
+        self._maybe_login()
+        data = self._request_json(
+            "POST",
+            "/video/agent/persist",
+            json=body,
+            request_timeout=600.0,
+        )
+        if data.get("code") != 0:
+            msg = data.get("message") or "Java persist 失败"
+            if "空间不存在" in (msg or ""):
+                msg = (
+                    f"{msg}（常见原因：Agent 的 JAVA_BASE_URL={self.base_url!r} 与浏览器访问的 Java "
+                    "不是同一套库；请把 .env 里 JAVA_BASE_URL 设为 http://127.0.0.1:8123/api 并重启 Agent。"
+                )
+            raise RuntimeError(msg)
+        return data.get("data") or {}
 
 
 java_client = JavaBackendClient()

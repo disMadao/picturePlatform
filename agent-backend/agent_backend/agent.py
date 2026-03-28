@@ -8,6 +8,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from .ark_video import create_task_and_wait_for_video_url
+from .config import config
 from .deepseek_client import deepseek_client
 from .java_client import java_client
 from .vector_store import VectorSearchResult, vector_client
@@ -62,6 +64,8 @@ class PictureSearchAgent:
     ) -> SearchMode:
         """
         根据显式参数 + 启发式规则 + DeepSeek 决策，选择最终搜索模式。
+        - 查询词去空白后长度 < 6：固定 Java 关键词（backend）。
+        - 否则 DeepSeek 路由；意图不明时由 deepseek_client 提示词默认偏向 vector_text。
         """
         # 1. 前端强制指定模式时，优先使用
         if mode in (SearchMode.BACKEND, SearchMode.VECTOR_TEXT, SearchMode.VECTOR_IMAGE):
@@ -71,13 +75,17 @@ class PictureSearchAgent:
         if image_url:
             return SearchMode.VECTOR_IMAGE
 
-        # 3. 简单关键词启发：提到“语义”“风格”“相似”更像是向量文本搜图
+        # 3. 查询词过短（去空白后长度 < 6）：走 Java 关键词更稳，避免向量语义过宽
+        if query_text and len(query_text.strip()) < 6:
+            return SearchMode.BACKEND
+
+        # 4. 简单关键词启发：提到“语义”“风格”“相似”更像是向量文本搜图
         if query_text:
             lowered = query_text.lower()
             if any(kw in lowered for kw in ["语义", "风格", "相似", "类似", "推荐"]):
                 return SearchMode.VECTOR_TEXT
 
-        # 4. 调用 DeepSeek 做精细路由（如果配置了密钥）
+        # 5. 调用 DeepSeek 做精细路由（如果配置了密钥）；意图不明时由提示词偏向 vector_text
         if query_text and deepseek_client.api_key:
             # print("调用 DeepSeek 进行搜索模式决策\n")
             decision = deepseek_client.decide_search_mode(
@@ -86,7 +94,7 @@ class PictureSearchAgent:
             )
             return SearchMode(decision)
 
-        # 5. 默认退回原有后端关键词搜索
+        # 6. 无 DeepSeek 时默认 Java 关键词
         return SearchMode.BACKEND
 
     def _tool_backend_search(self, query_text: str, top_k: int) -> AgentResult:
@@ -191,7 +199,7 @@ class PictureSearchAgent:
         query_text: Optional[str],
         image_url: Optional[str],
         mode: SearchMode = SearchMode.AUTO,
-        top_k: int = 20,
+        top_k: int = 6,
     ) -> AgentResult:
         """
         对外暴露的统一搜索入口，由 FastAPI /agent/search 调用。
@@ -264,28 +272,73 @@ class PictureSearchAgent:
         result.steps = steps + result.steps
         return result
 
-    # --------------- 对话模式 ---------------
+    # --------------- 对话模式（图片搜索：不依赖 LLM 标记，直接搜图）---------------
 
-    _CHAT_SYSTEM_PROMPT = (
-        "你是一个图片搜索助手，运行在一个图片平台上。你可以：\n"
-        "1. 和用户自然对话，回答关于图片、摄影、设计等方面的问题\n"
-        "2. 帮用户搜索图片——当用户想搜索图片时，你必须在回复中包含一个特殊标记：\n"
-        "   [SEARCH_PICTURES:搜索关键词]\n"
-        "   例如用户说「帮我找几张夕阳的照片」，你应该回复类似：\n"
-        "   好的，我来帮你搜索夕阳相关的图片。[SEARCH_PICTURES:夕阳风景照]\n"
-        "3. 如果用户提供了图片链接想找相似图片，使用标记：\n"
-        "   [SEARCH_BY_IMAGE:图片URL]\n"
-        "\n"
-        "规则：\n"
-        "- 只有在用户明确想搜索图片时才使用 [SEARCH_PICTURES:...] 标记\n"
-        "- 普通闲聊、提问不要触发搜索\n"
-        "- 每次回复最多包含一个搜索标记\n"
-        "- 搜索标记中的关键词应该是提炼后的有效搜索词，不要原样复制用户的长句子\n"
-        "- 回复要简洁自然"
+    _SEARCH_MODE_CAPABILITY_TEXT = (
+        "此 Agent 只能完成图片搜索与视频生成。"
+        "当前为图片搜索模式，请描述你想找的图片内容或关键词；"
+        "如需视频生成，请在上方切换到「视频生成」。"
     )
 
-    _SEARCH_PATTERN = re.compile(r"\[SEARCH_PICTURES:(.+?)\]")
-    _IMAGE_SEARCH_PATTERN = re.compile(r"\[SEARCH_BY_IMAGE:(.+?)\]")
+    _OFF_TOPIC_GREETING_ONLY = re.compile(
+        r"^(?:\s*)(?:你好|您好|在吗|在不在|hi|hello|嗨|早上好|晚上好|下午好|谢谢|多谢|"
+        r"再见|拜拜|嗯|哦|好|ok|OK|好的|行|收到|辛苦|👍|🙏|哈哈|哈哈哈)(?:[!.！。…\s，,])*$",
+        re.I,
+    )
+
+    @staticmethod
+    def _extract_search_query_from_user(user_message: str) -> str:
+        """从自然语言里抽出关键词。"""
+        s = user_message.strip()
+        if not s:
+            return ""
+        s = re.sub(r"^(?:请|帮我|麻烦|能否|能不能|可以)?\s*", "", s)
+        s = re.sub(r"^(?:查找|搜索|搜一?[搜下]?|找一?[找下]?|推荐)\s*", "", s, count=1)
+        # 「薇尔莉特的图片」「马男波杰克里的图片」整段后缀去掉，避免只剩「马男波杰克里」
+        s = re.sub(
+            r"(?:的|里的)(?:图片|照片|壁纸|相片|照)(?:片)?\s*$",
+            "",
+            s,
+        )
+        s = re.sub(r"的?(?:图片|照片|壁纸|相片|照)(?:片)?\s*$", "", s)
+        s = s.strip("，。！？!?；;、 ")
+        return (s[:300] if s else user_message.strip()[:300]).strip()
+
+    @classmethod
+    def _is_off_topic_for_search_mode(cls, user_message: str) -> bool:
+        """图片搜索模式下视为「与找图无关」的输入：寒暄、空内容、明显非找图闲聊等。"""
+        t = (user_message or "").strip()
+        if not t:
+            return True
+        if len(t) <= 40 and cls._OFF_TOPIC_GREETING_ONLY.match(t):
+            return True
+        # 明显与找图无关且未提及图/照片/壁纸
+        if "图" not in t and "照片" not in t and "壁纸" not in t and "搜" not in t and "找" not in t:
+            if len(t) < 100 and re.search(
+                r"^(?:今天|明天|后天).{0,20}(?:天气|气温|下雨|下雪|台风)",
+                t,
+            ):
+                return True
+            if len(t) < 80 and re.search(
+                r"(?:讲个笑话|说个笑话|股票|汇率|比特币|作业|论文|代码怎么写|bug|报错)",
+                t,
+            ):
+                return True
+        return False
+
+    def _reply_search_mode_capability_only(self, conversation_id: int) -> Dict[str, Any]:
+        conv_db.add_message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=self._SEARCH_MODE_CAPABILITY_TEXT,
+            content_type="text",
+        )
+        return {
+            "role": "assistant",
+            "contentType": "text",
+            "content": self._SEARCH_MODE_CAPABILITY_TEXT,
+            "extra": None,
+        }
 
     def chat(
         self,
@@ -293,11 +346,12 @@ class PictureSearchAgent:
         user_message: str,
         user_id: int,
         image_url: Optional[str] = None,
-        top_k: int = 3,
+        top_k: int = 10,
+        session_intent: str = "search",
     ) -> Dict[str, Any]:
         """
-        对话式入口。
-        返回 {"role", "contentType", "content", "extra"} 形式的 assistant 消息。
+        图片搜索入口（session_intent=search）：直接走搜索，不依赖 DeepSeek 的 [SEARCH_PICTURES] 标记。
+        无关寒暄返回能力说明文案。
         """
         # 1. 保存用户消息
         user_extra = {"image_url": image_url} if image_url else None
@@ -317,76 +371,28 @@ class PictureSearchAgent:
             title = user_message[:50] if len(user_message) > 50 else user_message
             conv_db.update_conversation_title(conversation_id, title)
 
-        # 3. 拼 LLM 上下文
-        recent = conv_db.get_recent_messages(conversation_id, limit=20)
-        llm_messages: List[Dict[str, str]] = []
-        for m in recent:
-            role = m["role"]
-            if role not in ("user", "assistant"):
-                continue
-            text = m.get("content") or ""
-            if m.get("contentType") == "search_result" and m.get("extra"):
-                extra = m["extra"] if isinstance(m["extra"], dict) else {}
-                pic_count = len(extra.get("pictures", []))
-                text = f"{text}"
-            llm_messages.append({"role": role, "content": text})
+        # 3. 仅处理图片搜索模式（video 在 chat_video）
+        if session_intent != "search":
+            logger.warning("chat() 收到非 search 的 session_intent=%r，按 search 处理", session_intent)
 
-        # 4. 调用 DeepSeek 对话
-        if not deepseek_client.api_key:
-            # 没有配置 LLM，走纯搜索兜底
-            return self._fallback_search_chat(
-                conversation_id, user_message, image_url, top_k
-            )
-
-        try:
-            llm_reply = deepseek_client.chat_with_history(
-                messages=llm_messages,
-                system_prompt=self._CHAT_SYSTEM_PROMPT,
-            )
-        except Exception as e:
-            logger.warning("DeepSeek 对话调用失败: %s", e)
-            return self._fallback_search_chat(
-                conversation_id, user_message, image_url, top_k
-            )
-
-        # 5. 解析 LLM 回复，看是否需要触发搜索
-        search_match = self._SEARCH_PATTERN.search(llm_reply)
-        image_search_match = self._IMAGE_SEARCH_PATTERN.search(llm_reply)
-
-        if image_url and not image_search_match:
-            # 用户提供了图片链接但 LLM 没输出标记，主动触发以图搜图
-            clean_reply = llm_reply
+        # 以图搜图：有图链则直接搜，不判断寒暄
+        if image_url and str(image_url).strip():
             return self._do_search_and_save(
-                conversation_id, clean_reply, None, image_url, top_k
+                conversation_id,
+                "为你找到以下相似图片",
+                None,
+                str(image_url).strip(),
+                top_k,
             )
 
-        if image_search_match:
-            img_url = image_search_match.group(1).strip()
-            clean_reply = self._IMAGE_SEARCH_PATTERN.sub("", llm_reply).strip()
-            return self._do_search_and_save(
-                conversation_id, clean_reply, None, img_url, top_k
-            )
+        if self._is_off_topic_for_search_mode(user_message):
+            return self._reply_search_mode_capability_only(conversation_id)
 
-        if search_match:
-            query = search_match.group(1).strip()
-            clean_reply = self._SEARCH_PATTERN.sub("", llm_reply).strip()
-            return self._do_search_and_save(
-                conversation_id, clean_reply, query, None, top_k
-            )
-
-        # 6. 普通对话，直接保存文本回复
-        conv_db.add_message(
-            conversation_id=conversation_id,
-            role="assistant",
-            content=llm_reply,
-            content_type="text",
-        )
-        return {
-            "role": "assistant",
-            "contentType": "text",
-            "content": llm_reply,
-            "extra": None,
-        }
+        q = self._extract_search_query_from_user(user_message)
+        if not q:
+            q = user_message.strip()
+        reply_text = f"以下是「{q}」的搜索结果"
+        return self._do_search_and_save(conversation_id, reply_text, q, None, top_k)
 
     def _do_search_and_save(
         self,
@@ -396,7 +402,7 @@ class PictureSearchAgent:
         image_url: Optional[str],
         top_k: int,
     ) -> Dict[str, Any]:
-        """执行搜索并将结果作为 assistant 消息存入数据库。"""
+        """执行搜索并将结果作为 assistant 消息存入数据库（模式由 _decide_mode + DeepSeek 决定）。"""
         result = self.search(
             query_text=query_text,
             image_url=image_url,
@@ -423,21 +429,132 @@ class PictureSearchAgent:
             "extra": extra,
         }
 
-    def _fallback_search_chat(
+    def chat_video(
         self,
         conversation_id: int,
         user_message: str,
-        image_url: Optional[str],
-        top_k: int,
+        user_id: int,
+        space_id: Optional[int],
+        first_frame_url: Optional[str] = None,
+        last_frame_url: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """没有 LLM 时的兜底：直接走搜索。"""
-        return self._do_search_and_save(
-            conversation_id,
-            "",
-            user_message if not image_url else None,
-            image_url,
-            top_k,
+        """
+        视频生成：方舟任务 -> Java 转存 COS + 落库 -> 返回 contentType=video。
+        """
+        user_extra: Dict[str, Any] = {
+            "session_intent": "video",
+            "space_id": space_id,
+            "first_frame_url": first_frame_url,
+            "last_frame_url": last_frame_url,
+        }
+        conv_db.add_message(
+            conversation_id=conversation_id,
+            role="user",
+            content=user_message,
+            content_type="text",
+            extra=user_extra,
         )
+        conv_db.touch_conversation(conversation_id)
+
+        all_msgs = conv_db.list_messages(conversation_id)
+        user_msgs = [m for m in all_msgs if m["role"] == "user"]
+        if len(user_msgs) == 1:
+            title = user_message[:50] if len(user_message) > 50 else user_message
+            conv_db.update_conversation_title(conversation_id, f"[视频] {title}")
+
+        if not space_id or space_id <= 0:
+            err = "请先在界面选择要保存到的私有空间（space_id）。"
+            conv_db.add_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=err,
+                content_type="text",
+            )
+            return {
+                "role": "assistant",
+                "contentType": "text",
+                "content": err,
+                "extra": None,
+            }
+
+        if not (user_message or "").strip():
+            err = "请填写视频生成提示词。"
+            conv_db.add_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=err,
+                content_type="text",
+            )
+            return {
+                "role": "assistant",
+                "contentType": "text",
+                "content": err,
+                "extra": None,
+            }
+
+        try:
+            task_id, temp_url, _ = create_task_and_wait_for_video_url(
+                user_message.strip(),
+                first_frame_url=first_frame_url,
+                last_frame_url=last_frame_url,
+            )
+            logger.info(
+                "准备落库视频: JAVA_BASE_URL=%s user_id=%s space_id=%s",
+                config.java_base_url,
+                user_id,
+                space_id,
+            )
+            vo = java_client.persist_agent_video(
+                {
+                    "tempVideoUrl": temp_url,
+                    "userId": user_id,
+                    "spaceId": space_id,
+                    "name": "生成视频",
+                    "introduction": user_message.strip()[:500],
+                    "prompt": user_message.strip()[:2000],
+                    "thumbnailUrl": first_frame_url,
+                    "conversationId": conversation_id,
+                    "arkTaskId": task_id,
+                }
+            )
+        except Exception as e:
+            logger.exception("视频生成或落库失败: %s", e)
+            err = f"视频生成失败：{e}"
+            conv_db.add_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=err,
+                content_type="text",
+            )
+            return {
+                "role": "assistant",
+                "contentType": "text",
+                "content": err,
+                "extra": None,
+            }
+
+        video_url = vo.get("url") or ""
+        extra = {
+            "videoUrl": video_url,
+            "videoRecordId": vo.get("id"),
+            "thumbnailUrl": vo.get("thumbnailUrl"),
+            "spaceId": space_id,
+            "arkTaskId": task_id,
+        }
+        summary = "视频已生成并保存到你的空间。"
+        conv_db.add_message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=summary,
+            content_type="video",
+            extra=extra,
+        )
+        return {
+            "role": "assistant",
+            "contentType": "video",
+            "content": summary,
+            "extra": extra,
+        }
 
 
 picture_search_agent = PictureSearchAgent()

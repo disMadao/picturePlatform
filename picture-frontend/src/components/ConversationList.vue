@@ -45,17 +45,17 @@ import {
   DeleteOutlined,
   CommentOutlined,
 } from '@ant-design/icons-vue'
-import type { ConversationVO } from '@/api/agentController'
+import type { ConversationVO, SnowflakeId } from '@/api/agentController'
 
 defineProps<{
   conversations: ConversationVO[]
-  activeId?: number
+  activeId?: SnowflakeId
 }>()
 
 defineEmits<{
   create: []
-  select: [id: number]
-  delete: [id: number]
+  select: [id: SnowflakeId]
+  delete: [id: SnowflakeId]
 }>()
 </script>
 

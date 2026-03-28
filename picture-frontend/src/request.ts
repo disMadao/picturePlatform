@@ -1,15 +1,18 @@
 import axios from "axios";
 import {message} from "ant-design-vue";
 
-// 区分开发和生产环境
-const DEV_BASE_URL = "http://localhost:8123";
-const PROD_BASE_URL = "http://118.195.165.9";
-// 创建 Axios 实例
+// 开发：baseURL 为空，请求发到当前页面源（Vite），由 vite.config 代理到 Java，避免 127.0.0.1 vs localhost 跨域
+// 生产：整站若与后端同域可配 VITE_API_ORIGIN 为空；否则填完整 Java 根地址（含端口）
+const API_BASE =
+  import.meta.env.DEV
+    ? ''
+    : (import.meta.env.VITE_API_ORIGIN as string | undefined) || 'http://118.195.165.9'
+
 const myAxios = axios.create({
-    baseURL: DEV_BASE_URL,
-    timeout: 10000,
-    withCredentials: true,
-});
+  baseURL: API_BASE,
+  timeout: 10000,
+  withCredentials: true,
+})
 
 // 全局请求拦截器
 myAxios.interceptors.request.use(

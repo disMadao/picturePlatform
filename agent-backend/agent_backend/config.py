@@ -29,6 +29,16 @@ class BackendConfig(BaseModel):
     # db_password: str = os.getenv("MYSQL_PASSWORD", "meizijun_mima_123")
     db_name: str = os.getenv("MYSQL_DB", "yu_picture")
 
+    # 方舟视频生成（Seedance 等，需 pip install 'volcengine-python-sdk[ark]'）
+    ark_base_url: str = os.getenv(
+        "ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"
+    )
+    # 与 doubao_sendance_test 中模型 ID 一致，可在控制台替换
+    ark_video_model: str = os.getenv(
+        "ARK_VIDEO_MODEL", "doubao-seedance-1-5-pro-251215"
+    )
+    ark_poll_interval_sec: float = float(os.getenv("ARK_POLL_INTERVAL_SEC", "3"))
+
 
 config = BackendConfig()
 

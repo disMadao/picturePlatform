@@ -243,7 +243,8 @@ declare namespace API {
   type LoginUserVO = {
     createTime?: string
     editTime?: string
-    id?: number
+    /** 雪花 Long：后端 JSON 多为字符串，勿用 Number(id) 以免精度丢失 */
+    id?: number | string
     updateTime?: string
     userAccount?: string
     userAvatar?: string
@@ -511,7 +512,8 @@ declare namespace API {
     spaceLevel?: number
     spaceName?: string
     spaceType?: number
-    userId?: number
+    /** 雪花 ID 建议传字符串，避免 Number 丢精度 */
+    userId?: number | string
   }
 
   type SpaceRankAnalyzeRequest = {
@@ -617,7 +619,8 @@ declare namespace API {
   type SpaceVO = {
     createTime?: string
     editTime?: string
-    id?: number
+    /** 雪花 Long：后端多为字符串；勿 Number(id) */
+    id?: number | string
     maxCount?: number
     maxSize?: number
     permissionList?: string[]

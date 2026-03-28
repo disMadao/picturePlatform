@@ -104,7 +104,10 @@ const doSearch = async () => {
   loading.value = true
   try {
     const res = await agentSearchUsingPost({
-      user_id: loginUserStore.loginUser.id,
+      user_id:
+        loginUserStore.loginUser.id != null && loginUserStore.loginUser.id !== ''
+          ? String(loginUserStore.loginUser.id)
+          : undefined,
       query_text,
       image_url,
       mode: 'auto',

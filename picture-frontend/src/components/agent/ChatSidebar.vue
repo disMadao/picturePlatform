@@ -31,10 +31,10 @@
 
 <script setup lang="ts">
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
-import type { ConversationVO } from '@/api/agentApi'
+import type { ConversationVO, SnowflakeId } from '@/api/agentApi'
 
-defineProps<{ list: ConversationVO[]; activeId?: number }>()
-defineEmits<{ create: []; select: [id: number]; delete: [id: number] }>()
+defineProps<{ list: ConversationVO[]; activeId?: SnowflakeId }>()
+defineEmits<{ create: []; select: [id: SnowflakeId]; delete: [id: SnowflakeId] }>()
 </script>
 
 <style scoped>

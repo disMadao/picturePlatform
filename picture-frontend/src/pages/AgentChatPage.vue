@@ -121,16 +121,22 @@ import {
   sendMessage,
   type ConversationVO,
   type MessageVO,
+  type SnowflakeId,
 } from '@/api/agentController'
 import { useLoginUserStore } from '@/stores/useLoginUserStore'
 
 const route = useRoute()
 const router = useRouter()
 const loginUserStore = useLoginUserStore()
-const userId = () => loginUserStore.loginUser.id
+/** 雪花 id 保持字符串，勿 Number() */
+const userId = (): string | undefined => {
+  const raw = loginUserStore.loginUser.id as unknown
+  if (raw == null || raw === '') return undefined
+  return typeof raw === 'string' ? raw : String(raw)
+}
 
 const conversations = ref<ConversationVO[]>([])
-const activeConvId = ref<number>()
+const activeConvId = ref<SnowflakeId>()
 const messages = ref<MessageVO[]>([])
 const inputText = ref('')
 const sending = ref(false)
@@ -147,8 +153,8 @@ const scrollToBottom = () => {
 }
 
 // 将当前选中的对话 id 同步到 URL query，方便刷新后恢复
-const syncUrlQuery = (convId?: number) => {
-  const query = convId ? { id: String(convId) } : {}
+const syncUrlQuery = (convId?: SnowflakeId) => {
+  const query = convId != null && convId !== '' ? { id: String(convId) } : {}
   router.replace({ path: '/agent/chat', query })
 }
 
@@ -159,7 +165,10 @@ const fetchConversations = async () => {
   try {
     const res = await listConversations(uid)
     if (res.data.code === 0 && res.data.data) {
-      conversations.value = res.data.data
+      conversations.value = res.data.data.map(c => ({
+        ...c,
+        id: typeof c.id === 'string' ? c.id : String(c.id),
+      }))
     }
   } catch (e: any) {
     console.error('加载对话列表失败', e)
@@ -167,7 +176,7 @@ const fetchConversations = async () => {
 }
 
 // 加载某个对话的消息
-const fetchMessages = async (convId: number) => {
+const fetchMessages = async (convId: SnowflakeId) => {
   msgLoading.value = true
   try {
     const res = await listMessages(convId)
@@ -191,7 +200,7 @@ const handleCreate = async () => {
   try {
     const res = await createConversation(uid)
     if (res.data.code === 0 && res.data.data) {
-      const newId = res.data.data.id
+      const newId = String(res.data.data.id)
       await fetchConversations()
       activeConvId.value = newId
       messages.value = []
@@ -204,20 +213,20 @@ const handleCreate = async () => {
 }
 
 // 选中某个对话
-const handleSelect = async (id: number) => {
-  if (id === activeConvId.value) return
+const handleSelect = async (id: SnowflakeId) => {
+  if (String(id) === String(activeConvId.value ?? '')) return
   activeConvId.value = id
   syncUrlQuery(id)
   await fetchMessages(id)
 }
 
 // 删除对话
-const handleDelete = async (id: number) => {
+const handleDelete = async (id: SnowflakeId) => {
   const uid = userId()
   if (!uid) return
   try {
     await deleteConversation(uid, id)
-    if (activeConvId.value === id) {
+    if (String(activeConvId.value ?? '') === String(id)) {
       activeConvId.value = undefined
       messages.value = []
       syncUrlQuery()
@@ -297,14 +306,14 @@ const doSend = async () => {
 
 // 初始化：加载对话列表，恢复上次选中的对话
 onMounted(async () => {
+  await loginUserStore.fetchLoginUser()
   await fetchConversations()
-  // 从 URL query 恢复
-  const queryId = Number(route.query.id)
-  if (queryId && conversations.value.some((c) => c.id === queryId)) {
+  const raw = route.query.id
+  const queryId = Array.isArray(raw) ? raw[0] : raw
+  if (queryId && typeof queryId === 'string' && conversations.value.some((c) => String(c.id) === queryId)) {
     activeConvId.value = queryId
     await fetchMessages(queryId)
   } else if (conversations.value.length) {
-    // 默认选中最新的对话
     const latest = conversations.value[0]
     activeConvId.value = latest.id
     syncUrlQuery(latest.id)

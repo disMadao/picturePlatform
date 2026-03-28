@@ -56,11 +56,23 @@ class BaseResponse(BaseModel):
 class CreateConversationRequest(BaseModel):
   user_id: int
 
+class SessionIntent(str, Enum):
+  SEARCH = "search"
+  VIDEO = "video"
+
+
 class SendMessageRequest(BaseModel):
   user_id: int
   conversation_id: int
   content: str = Field(description="用户输入的文本")
-  image_url: Optional[str] = Field(default=None, description="可选的图片 URL（以图搜图）")
+  image_url: Optional[str] = Field(default=None, description="可选的图片 URL（以图搜图或视频首帧）")
+  session_intent: SessionIntent = Field(
+      default=SessionIntent.SEARCH,
+      description="search=图片搜索对话；video=视频生成",
+  )
+  space_id: Optional[int] = Field(default=None, description="视频落库目标私有空间 ID（video 必填）")
+  first_frame_url: Optional[str] = Field(default=None, description="视频首帧图 URL")
+  last_frame_url: Optional[str] = Field(default=None, description="视频尾帧图 URL（可选）")
 
 class ConversationVO(BaseModel):
   id: int

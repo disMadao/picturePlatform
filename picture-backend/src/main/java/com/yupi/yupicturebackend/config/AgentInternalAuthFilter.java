@@ -44,7 +44,8 @@ public class AgentInternalAuthFilter extends OncePerRequestFilter {
      */
     private static final String[] INTERNAL_NO_IP_CHECK_PATHS = new String[] {
             "/picture/get/vo",
-            "/picture/list/page/vo"
+            "/picture/list/page/vo",
+            "/video/agent/persist"
     };
 
     @Value("${agent.internalToken:}")

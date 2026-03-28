@@ -57,6 +57,11 @@ def list_conversations(user_id: int) -> List[Dict[str, Any]]:
                 for k in ("createTime", "updateTime"):
                     if r.get(k):
                         r[k] = str(r[k])
+                # JSON 给前端时大整数会超 JS 安全整数，改为字符串
+                if r.get("id") is not None:
+                    r["id"] = str(r["id"])
+                if r.get("userId") is not None:
+                    r["userId"] = str(r["userId"])
             return rows
     finally:
         conn.close()
@@ -151,6 +156,10 @@ def list_messages(conversation_id: int) -> List[Dict[str, Any]]:
                         r["extra"] = json.loads(r["extra"])
                     except Exception:
                         pass
+                if r.get("id") is not None:
+                    r["id"] = str(r["id"])
+                if r.get("conversationId") is not None:
+                    r["conversationId"] = str(r["conversationId"])
             return rows
     finally:
         conn.close()

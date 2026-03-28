@@ -45,12 +45,18 @@ class DeepSeekClient:
         """
         system_prompt = (
             "你是图片搜索路由助手，只回答 backend / vector_text / vector_image 之一。\n"
-            "backend：用户想按标题、简介等普通字段搜索；\n"
-            "vector_text：用户想按语义、风格、场景等更智能的方式文本搜图；\n"
+            "backend：用户明显在按标题、简介、标签、短词、固定分类名等做「关键词」检索；\n"
+            "vector_text：用户按语义、风格、场景、主题、人名/番剧名/作品名等做「语义」搜图；\n"
             "vector_image：用户上传或引用图片，希望根据图片找相似图。\n"
-            "注意：如果 has_image 为 true，更优先考虑 vector_image。"
+            "规则：\n"
+            "- 若 has_image 为 true，更优先考虑 vector_image。\n"
+            "- 若用户意图不清晰、难以判断更适合关键词还是语义检索，**默认选 vector_text**。\n"
+            "- 仅当用户明显在搜极短标签、账号、分类名等适合数据库字段匹配时，选 backend。"
         )
-        user_prompt = f"用户查询：{query_text!r}。has_image={has_image}。只输出一个单词：backend 或 vector_text 或 vector_image。"
+        user_prompt = (
+            f"用户查询：{query_text!r}。has_image={has_image}。"
+            "只输出一个单词：backend 或 vector_text 或 vector_image。"
+        )
 
         payload: Dict[str, Any] = {
             "model": self.model,

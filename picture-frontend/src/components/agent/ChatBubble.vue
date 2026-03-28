@@ -23,9 +23,9 @@
             </div>
           </div>
 
-          <!-- 搜索结果但无图 -->
-          <div v-if="msg.contentType === 'search_result' && !pics.length && !msg.content" class="cb-empty">
-            未找到相关图片
+          <!-- 有文案但无图时也要提示（否则像「只有一句话」） -->
+          <div v-if="msg.contentType === 'search_result' && !pics.length" class="cb-empty">
+            未找到可展示的图片
           </div>
 
           <!-- 视频 -->

@@ -23,3 +23,9 @@ description: Development workflow for the picturePlatform monorepo (picture-back
 ## 3. 与用户沟通语言
 
 - 中文回复，除非用户要求英文。
+
+## 4. 数据库建表与 DDL
+
+- 开发中若涉及**新建表、改表结构、执行迁移 SQL** 等，Agent **可能没有权限**在目标库上直接执行。
+- 做法：在代码/方案里可写 **MyBatis 实体、Mapper、业务逻辑**；**DDL 脚本或迁移说明**整理给用户，由**用户自行在库中建表或执行**。
+- 不要假设「已帮用户建好表」；若缺表会导致运行失败，应**明确列出**需要执行的 SQL 或变更点，方便用户操作。

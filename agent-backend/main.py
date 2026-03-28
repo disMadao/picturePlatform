@@ -1,6 +1,11 @@
 import os
 import logging
 
+from dotenv import load_dotenv
+
+# 先于其它模块加载，使 JAVA_BASE_URL / AGENT_INTERNAL_TOKEN 等来自 agent-backend/.env
+load_dotenv()
+
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,6 +16,7 @@ from agent_backend.schemas import (
     BaseResponse,
     CreateConversationRequest,
     SendMessageRequest,
+    SessionIntent,
 )
 from agent_backend.history import log_search
 from agent_backend import conversation as conv_db
@@ -24,7 +30,7 @@ ALLOWED_ORIGINS = [
     o.strip()
     for o in os.getenv(
         "CORS_ORIGINS",
-        "http://localhost:5173,http://localhost:8123,http://118.195.165.9",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8123,http://118.195.165.9",
     ).split(",")
     if o.strip()
 ]
@@ -44,7 +50,8 @@ app.add_middleware(
 @app.post("/agent/conversation/create", response_model=BaseResponse)
 def create_conversation(req: CreateConversationRequest) -> BaseResponse:
     cid = conv_db.create_conversation(user_id=req.user_id)
-    return BaseResponse(code=0, data={"id": cid})
+    # 与列表接口一致：id 用字符串，避免前端 JSON 大整数精度丢失
+    return BaseResponse(code=0, data={"id": str(cid)})
 
 
 @app.get("/agent/conversation/list", response_model=BaseResponse)
@@ -74,13 +81,23 @@ def list_messages(conversation_id: int = Query(...)) -> BaseResponse:
 
 @app.post("/agent/chat", response_model=BaseResponse)
 def agent_chat(req: SendMessageRequest) -> BaseResponse:
-    result = picture_search_agent.chat(
-        conversation_id=req.conversation_id,
-        user_message=req.content,
-        user_id=req.user_id,
-        image_url=req.image_url,
-    )
-    print(result)
+    if req.session_intent == SessionIntent.VIDEO:
+        result = picture_search_agent.chat_video(
+            conversation_id=req.conversation_id,
+            user_message=req.content,
+            user_id=req.user_id,
+            space_id=req.space_id,
+            first_frame_url=req.first_frame_url or req.image_url,
+            last_frame_url=req.last_frame_url,
+        )
+    else:
+        result = picture_search_agent.chat(
+            conversation_id=req.conversation_id,
+            user_message=req.content,
+            user_id=req.user_id,
+            image_url=req.image_url,
+            session_intent=req.session_intent.value,
+        )
     return BaseResponse(code=0, data=result)
 
 

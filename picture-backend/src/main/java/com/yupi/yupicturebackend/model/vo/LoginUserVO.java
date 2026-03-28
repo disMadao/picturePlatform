@@ -1,5 +1,7 @@
 package com.yupi.yupicturebackend.model.vo;
 
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -12,8 +14,9 @@ import java.util.Date;
 public class LoginUserVO implements Serializable {
 
     /**
-     * id
+     * id（序列化为字符串，避免前端 JS 大整数精度丢失）
      */
+    @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
 
     /**

@@ -13,8 +13,11 @@ const agentRequest = axios.create({
 
 // --------------- 旧版搜索（保留兼容） ---------------
 
+/** 雪花 Long：JSON 用字符串，勿用 JS Number */
+export type SnowflakeId = string | number
+
 export interface AgentSearchRequest {
-  user_id?: number
+  user_id?: SnowflakeId
   query_text?: string
   image_url?: string
   mode?: 'auto' | 'backend' | 'vector_text' | 'vector_image'
@@ -49,15 +52,15 @@ export async function agentSearchUsingPost(body: AgentSearchRequest) {
 // --------------- 对话管理 ---------------
 
 export interface ConversationVO {
-  id: number
+  id: SnowflakeId
   title?: string
   createTime: string
   updateTime: string
 }
 
 export interface MessageVO {
-  id: number
-  conversationId: number
+  id: SnowflakeId
+  conversationId: SnowflakeId
   role: 'user' | 'assistant' | 'system'
   contentType: 'text' | 'search_result' | 'image' | 'video'
   content?: string
@@ -77,28 +80,28 @@ interface BaseResponse<T = any> {
   message?: string
 }
 
-export async function createConversation(userId: number) {
-  return agentRequest<BaseResponse<{ id: number }>>('/agent/conversation/create', {
+export async function createConversation(userId: SnowflakeId) {
+  return agentRequest<BaseResponse<{ id: string }>>('/agent/conversation/create', {
     method: 'POST',
     data: { user_id: userId },
   })
 }
 
-export async function listConversations(userId: number) {
+export async function listConversations(userId: SnowflakeId) {
   return agentRequest<BaseResponse<ConversationVO[]>>('/agent/conversation/list', {
     method: 'GET',
     params: { user_id: userId },
   })
 }
 
-export async function deleteConversation(userId: number, conversationId: number) {
+export async function deleteConversation(userId: SnowflakeId, conversationId: SnowflakeId) {
   return agentRequest<BaseResponse>('/agent/conversation/delete', {
     method: 'POST',
     params: { user_id: userId, conversation_id: conversationId },
   })
 }
 
-export async function listMessages(conversationId: number) {
+export async function listMessages(conversationId: SnowflakeId) {
   return agentRequest<BaseResponse<MessageVO[]>>('/agent/conversation/messages', {
     method: 'GET',
     params: { conversation_id: conversationId },
@@ -108,8 +111,8 @@ export async function listMessages(conversationId: number) {
 // --------------- 聊天 ---------------
 
 export interface SendMessageRequest {
-  user_id: number
-  conversation_id: number
+  user_id: SnowflakeId
+  conversation_id: SnowflakeId
   content: string
   image_url?: string
 }
