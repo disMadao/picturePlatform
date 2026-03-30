@@ -20,5 +20,11 @@ git push
 
 
 
+问题1：已经 add 的内容又不想上传了，只添加在 .gitignore中是没用的，需要先 git rm  --cached 
+
+问题2：**修过了历史commit，就得强制提交**
+
+这里的修改历史commit，使用的是 git rebase -i ，这种情况修改了某个历史的commit，就算是本地的没有push的，最后也得强制提交。
+
 
 

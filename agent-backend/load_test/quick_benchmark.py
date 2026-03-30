@@ -272,10 +272,12 @@ def main():
 if __name__ == "__main__":
     # main()
     # print()
-    concurrent_users_nums_for_agent_vector_search = [2]# [600,700,800,900]
-    print(find_max_qps(test_agent_vector_search, "Agent 向量搜索", 0.95,concurrent_users_nums_for_agent_vector_search))
-    concurrent_users_nums_for_java_search = [100,200,300,400,500,600,700,800,900,1000]
+    # concurrent_users_nums_for_agent_vector_search = [2]# [600,700,800,900]
+    # print(find_max_qps(test_agent_vector_search, "Agent 向量搜索", 0.95,concurrent_users_nums_for_agent_vector_search))
+    # concurrent_users_nums_for_java_search =  [100,200,300,400,500,600,700,800,900,1000]
     # print(find_max_qps(test_java_search, "Java 普通搜索", 0.95, concurrent_users_nums_for_java_search))
-    concurrent_users_nums_for_agent_backend_search =  [100,200,300,400,500,600,700,800,900,1000]
+    # concurrent_users_nums_for_agent_backend_search =  [100,200,300,400,500,600,700,800,900,1000]
     # print(find_max_qps(test_agent_backend_search, "Agent->Java 后端搜索", 0.95,concurrent_users_nums_for_agent_backend_search))
+    run_sequential_benchmark(test_agent_backend_search, "Agent->Java 后端搜索", 10)
+
 
